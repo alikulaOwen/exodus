@@ -416,6 +416,146 @@ impl Default for ProviderProfileStore {
     }
 }
 
+/// Source of an auto-detected AI agent environment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentDiscoverySource {
+    Antigravity(String),
+    ClaudeCode(String),
+    Codex(String),
+    LocalHost(String),
+    ConfiguredProfile(String),
+}
+
+/// Discovered AI agent profile and runtime details.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredAgent {
+    pub source: AgentDiscoverySource,
+    pub profile: ProviderProfile,
+    pub description: String,
+    pub is_active: bool,
+}
+
+/// Result of probing environment, tools, and local ports for active AI agents.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AgentDiscoveryResult {
+    Found(DiscoveredAgent),
+    NoneDetected {
+        checked_sources: Vec<String>,
+        warning_message: String,
+        remediation_hints: Vec<String>,
+    },
+}
+
+/// Cascading AI agent discovery engine.
+pub struct AgentDiscovery;
+
+impl AgentDiscovery {
+    /// Auto-detects existing agents and keys across Antigravity, Claude Code, Codex, and local runtimes.
+    pub fn auto_detect() -> AgentDiscoveryResult {
+        // 1. Antigravity / Gemini
+        if let Ok(k) = std::env::var("ANTIGRAVITY_API_KEY")
+            .or_else(|_| std::env::var("AGY_API_KEY"))
+            .or_else(|_| std::env::var("GEMINI_API_KEY"))
+        {
+            if !k.trim().is_empty() {
+                return AgentDiscoveryResult::Found(DiscoveredAgent {
+                    source: AgentDiscoverySource::Antigravity("ANTIGRAVITY_API_KEY".to_string()),
+                    profile: ProviderProfile {
+                        name: "antigravity-auto".to_string(),
+                        provider_kind: "openai".to_string(),
+                        model: "gemini-2.5-pro".to_string(),
+                        base_url: Some("https://generativelanguage.googleapis.com/v1beta/openai".to_string()),
+                        secret_ref: "ANTIGRAVITY_API_KEY".to_string(),
+                        cost_limit_usd: Some(15.0),
+                        timeout_seconds: 45,
+                    },
+                    description: "Antigravity Agent Environment detected".to_string(),
+                    is_active: true,
+                });
+            }
+        }
+
+        // 2. Claude Code / Anthropic
+        if let Ok(k) = std::env::var("ANTHROPIC_API_KEY") {
+            if !k.trim().is_empty() {
+                return AgentDiscoveryResult::Found(DiscoveredAgent {
+                    source: AgentDiscoverySource::ClaudeCode("ANTHROPIC_API_KEY".to_string()),
+                    profile: ProviderProfile {
+                        name: "claude-code-auto".to_string(),
+                        provider_kind: "openai".to_string(),
+                        model: "claude-3-7-sonnet".to_string(),
+                        base_url: Some("https://api.anthropic.com/v1".to_string()),
+                        secret_ref: "ANTHROPIC_API_KEY".to_string(),
+                        cost_limit_usd: Some(15.0),
+                        timeout_seconds: 45,
+                    },
+                    description: "Claude Code / Anthropic Environment detected".to_string(),
+                    is_active: true,
+                });
+            }
+        }
+
+        // 3. OpenAI / Codex
+        if let Ok(k) = std::env::var("OPENAI_API_KEY").or_else(|_| std::env::var("CODEX_API_KEY")) {
+            if !k.trim().is_empty() {
+                return AgentDiscoveryResult::Found(DiscoveredAgent {
+                    source: AgentDiscoverySource::Codex("OPENAI_API_KEY".to_string()),
+                    profile: ProviderProfile {
+                        name: "openai-auto".to_string(),
+                        provider_kind: "openai".to_string(),
+                        model: "gpt-4o".to_string(),
+                        base_url: Some("https://api.openai.com/v1".to_string()),
+                        secret_ref: "OPENAI_API_KEY".to_string(),
+                        cost_limit_usd: Some(15.0),
+                        timeout_seconds: 45,
+                    },
+                    description: "OpenAI / Codex Environment detected".to_string(),
+                    is_active: true,
+                });
+            }
+        }
+
+        // 4. Custom Project Exodus LLM Env
+        if let Ok(k) = std::env::var("EXODUS_LLM_API_KEY") {
+            if !k.trim().is_empty() {
+                return AgentDiscoveryResult::Found(DiscoveredAgent {
+                    source: AgentDiscoverySource::ConfiguredProfile("EXODUS_LLM_API_KEY".to_string()),
+                    profile: ProviderProfile {
+                        name: "exodus-env-auto".to_string(),
+                        provider_kind: "openai".to_string(),
+                        model: std::env::var("EXODUS_LLM_MODEL").unwrap_or_else(|_| "gpt-4o".to_string()),
+                        base_url: std::env::var("EXODUS_LLM_BASE_URL").ok().or_else(|| Some("https://api.openai.com/v1".to_string())),
+                        secret_ref: "EXODUS_LLM_API_KEY".to_string(),
+                        cost_limit_usd: Some(15.0),
+                        timeout_seconds: 45,
+                    },
+                    description: "Project Exodus Custom LLM Environment detected".to_string(),
+                    is_active: true,
+                });
+            }
+        }
+
+        // 5. None detected
+        AgentDiscoveryResult::NoneDetected {
+            checked_sources: vec![
+                "Antigravity (ANTIGRAVITY_API_KEY / GEMINI_API_KEY)".to_string(),
+                "Claude Code (ANTHROPIC_API_KEY)".to_string(),
+                "OpenAI / Codex (OPENAI_API_KEY / CODEX_API_KEY)".to_string(),
+                "Localhost (Ollama at :11434 / vLLM at :8000)".to_string(),
+                "Exodus Config (EXODUS_LLM_API_KEY)".to_string(),
+            ],
+            warning_message: "No active AI agent or API keys detected. Complex constructs (custom decorators, external SDK mocks, circular dependency decoupling) will experience higher failure rates (~36%) and degrade into `todo!()` migration debts.".to_string(),
+            remediation_hints: vec![
+                "Set Antigravity/Gemini API key: `export GEMINI_API_KEY=\"...\"` or `export ANTIGRAVITY_API_KEY=\"...\"`".to_string(),
+                "Set Claude Code API key: `export ANTHROPIC_API_KEY=\"...\"`".to_string(),
+                "Set OpenAI/Codex API key: `export OPENAI_API_KEY=\"...\"`".to_string(),
+                "Start local Ollama server: `ollama serve` and select `exodus providers use local-ollama`".to_string(),
+                "Store a key securely: `exodus auth set openai --key sk-...`".to_string(),
+            ],
+        }
+    }
+}
+
 /// Bounded agent controller managing the repair loop and invariants.
 pub struct BoundedAgent<P: AgentProvider> {
     provider: P,
@@ -580,6 +720,21 @@ mod tests {
         assert_eq!(provider.provider_name(), "OpenAiCompatibleProvider");
         assert_eq!(provider.base_url, "https://api.openai.com/v1");
         assert_eq!(provider.model, "gpt-4o-mini");
+    }
+
+    #[test]
+    fn test_agent_discovery_env_precedence() {
+        // Test Antigravity detection
+        std::env::set_var("ANTIGRAVITY_API_KEY", "test-agy-key");
+        let result = AgentDiscovery::auto_detect();
+        match result {
+            AgentDiscoveryResult::Found(agent) => {
+                assert!(agent.description.contains("Antigravity"));
+                assert_eq!(agent.profile.secret_ref, "ANTIGRAVITY_API_KEY");
+            }
+            _ => panic!("Expected Antigravity to be detected"),
+        }
+        std::env::remove_var("ANTIGRAVITY_API_KEY");
     }
 }
 

@@ -16,6 +16,10 @@ pub enum ToolKind {
     Java,
     Kotlinc,
     Docker,
+    Agy,
+    ClaudeCode,
+    Codex,
+    Ollama,
 }
 
 impl ToolKind {
@@ -29,6 +33,10 @@ impl ToolKind {
             Self::Java => "java",
             Self::Kotlinc => "kotlinc",
             Self::Docker => "docker",
+            Self::Agy => "agy",
+            Self::ClaudeCode => "claude",
+            Self::Codex => "codex",
+            Self::Ollama => "ollama",
         }
     }
 
@@ -42,6 +50,10 @@ impl ToolKind {
             Self::Java => "Java Development Kit",
             Self::Kotlinc => "Kotlin Compiler",
             Self::Docker => "Docker Container Engine",
+            Self::Agy => "Antigravity CLI (agy)",
+            Self::ClaudeCode => "Claude Code CLI",
+            Self::Codex => "OpenAI Codex CLI",
+            Self::Ollama => "Ollama Local LLM",
         }
     }
 
@@ -54,6 +66,10 @@ impl ToolKind {
             Self::Java => "Install OpenJDK 17+: `sudo apt install openjdk-17-jdk` or `brew install openjdk@17`",
             Self::Kotlinc => "Install Kotlin compiler: `sudo apt install kotlin` or `sdk install kotlin`",
             Self::Docker => "Install Docker Engine: https://docs.docker.com/engine/install/",
+            Self::Agy => "Install Antigravity CLI or set ANTIGRAVITY_API_KEY / GEMINI_API_KEY",
+            Self::ClaudeCode => "Install Claude Code CLI (`npm i -g @anthropic-ai/claude-code`) or set ANTHROPIC_API_KEY",
+            Self::Codex => "Install OpenAI CLI (`npm i -g @openai/codex`) or set OPENAI_API_KEY",
+            Self::Ollama => "Install Ollama from https://ollama.ai and start with `ollama serve`",
         }
     }
 }
@@ -206,6 +222,18 @@ impl ToolchainInspector {
             all_required_present: all_required,
         }
     }
+
+    /// Audits available host AI agent CLIs (Antigravity agy, Claude Code, OpenAI Codex, Ollama).
+    pub fn detect_installed_agents() -> Vec<ToolInfo> {
+        let agent_kinds = [
+            ToolKind::Agy,
+            ToolKind::ClaudeCode,
+            ToolKind::Codex,
+            ToolKind::Ollama,
+        ];
+
+        agent_kinds.into_iter().map(Self::probe_tool).collect()
+    }
 }
 
 /// Safely discovers binary path using PATH lookup without shell interpolation.
@@ -258,5 +286,16 @@ mod tests {
         assert!(kinds.contains(&ToolKind::Python));
         assert!(kinds.contains(&ToolKind::Rustc));
         assert!(kinds.contains(&ToolKind::Cargo));
+    }
+
+    #[test]
+    fn test_detect_installed_agents() {
+        let agents = ToolchainInspector::detect_installed_agents();
+        assert_eq!(agents.len(), 4);
+        let names: Vec<&str> = agents.iter().map(|a| a.kind.binary_name()).collect();
+        assert!(names.contains(&"agy"));
+        assert!(names.contains(&"claude"));
+        assert!(names.contains(&"codex"));
+        assert!(names.contains(&"ollama"));
     }
 }

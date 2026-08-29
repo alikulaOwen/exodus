@@ -81,6 +81,10 @@ enum Commands {
         /// instead of the single whole-repository transform+scaffold below.
         #[arg(long)]
         gated: bool,
+
+        /// Run explicitly in deterministic offline AST mode without probing for an active AI agent
+        #[arg(long)]
+        offline: bool,
     },
     /// Verify target Rust crate (format, check, test, bounded repair)
     Verify {
@@ -410,7 +414,24 @@ async fn main() -> anyhow::Result<()> {
             output,
             force,
             gated,
+            offline,
         } => {
+            if !offline {
+                match exodus_agent::AgentDiscovery::auto_detect() {
+                    exodus_agent::AgentDiscoveryResult::Found(agent) => {
+                        println!("🤖 Active AI Agent Detected: {} ({})", agent.description, agent.profile.model);
+                    }
+                    exodus_agent::AgentDiscoveryResult::NoneDetected { warning_message, remediation_hints, .. } => {
+                        println!("⚠️  {}", warning_message);
+                        println!("💡 Recommended Setup Options:");
+                        for hint in &remediation_hints {
+                            println!("   • {hint}");
+                        }
+                        println!("⏩ Continuing with deterministic AST translation (or use `--offline` to silence warning)...\n");
+                    }
+                }
+            }
+
             let exodus_dir = Path::new(".exodus");
             let plan_path = exodus_dir.join("plan.json");
 
@@ -1241,11 +1262,20 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Doctor => {
             let report = exodus_toolchain::ToolchainInspector::audit_all();
+            let agent_tools = exodus_toolchain::ToolchainInspector::detect_installed_agents();
+            let discovery = exodus_agent::AgentDiscovery::auto_detect();
+
             if cli.json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
+                let doc_json = serde_json::json!({
+                    "system_toolchains": report,
+                    "agent_toolchains": agent_tools,
+                    "active_agent_discovery": discovery,
+                });
+                println!("{}", serde_json::to_string_pretty(&doc_json)?);
             } else {
-                println!("🩺 Project Exodus Host Toolchain Health Check");
+                println!("🩺 Project Exodus Host Diagnostics");
                 println!("============================================================");
+                println!("1. System Compilers & Runtimes:");
                 for tool in &report.tools {
                     let status_str = match &tool.status {
                         exodus_toolchain::ToolStatus::Available => "✅ Available",
@@ -1253,9 +1283,37 @@ async fn main() -> anyhow::Result<()> {
                         exodus_toolchain::ToolStatus::Incompatible(reason) => reason.as_str(),
                     };
                     let ver_str = tool.version.as_deref().unwrap_or("N/A");
-                    println!("{:<28} {:<15} (version: {})", tool.name, status_str, ver_str);
+                    println!("   {:<26} {:<15} ({})", tool.name, status_str, ver_str);
                     if let Some(guidance) = &tool.install_guidance {
-                        println!("   💡 {}", guidance);
+                        println!("      💡 {}", guidance);
+                    }
+                }
+
+                println!("\n2. AI Agent Toolchains & CLIs:");
+                for tool in &agent_tools {
+                    let status_str = match &tool.status {
+                        exodus_toolchain::ToolStatus::Available => "✅ Detected",
+                        exodus_toolchain::ToolStatus::Missing => "⚪ Not Found",
+                        exodus_toolchain::ToolStatus::Incompatible(reason) => reason.as_str(),
+                    };
+                    let ver_str = tool.version.as_deref().unwrap_or("N/A");
+                    println!("   {:<26} {:<15} ({})", tool.name, status_str, ver_str);
+                }
+
+                println!("\n3. Active LLM / Agent Environment Resolution:");
+                match discovery {
+                    exodus_agent::AgentDiscoveryResult::Found(agent) => {
+                        println!("   🤖 Active Agent: ✅ {}", agent.description);
+                        println!("      • Model: {}", agent.profile.model);
+                        println!("      • Secret Ref: {}", agent.profile.secret_ref);
+                    }
+                    exodus_agent::AgentDiscoveryResult::NoneDetected { checked_sources, remediation_hints, .. } => {
+                        println!("   ⚪ Status: No active AI agent / key detected");
+                        println!("   Checked Sources: {}", checked_sources.join(", "));
+                        println!("   💡 To connect an agent:");
+                        for hint in remediation_hints.iter().take(3) {
+                            println!("      • {hint}");
+                        }
                     }
                 }
                 println!("============================================================");
