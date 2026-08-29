@@ -36,6 +36,8 @@ exodus-agent = { path = "crates/exodus-agent", version = "0.1.0" }
 exodus-transform = { path = "crates/exodus-transform", version = "0.1.0" }
 exodus-fallback = { path = "crates/exodus-fallback", version = "0.1.0" }
 exodus-verifier = { path = "crates/exodus-verifier", version = "0.1.0" }
+exodus-store = { path = "crates/exodus-store", version = "0.1.0" }
+exodus-toolchain = { path = "crates/exodus-toolchain", version = "0.1.0" }
 exodus-case = { path = "crates/exodus-case", version = "0.1.0" }
 exodus-worktree = { path = "crates/exodus-worktree", version = "0.1.0" }
 exodus-eval = { path = "crates/exodus-eval", version = "0.1.0" }

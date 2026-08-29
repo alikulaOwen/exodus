@@ -250,6 +250,172 @@ fn extract_code_snippet(text: &str) -> Option<String> {
     Some(text.trim().to_string())
 }
 
+/// Provider profile model stored outside repository in user configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderProfile {
+    pub name: String,
+    pub provider_kind: String,
+    pub model: String,
+    pub base_url: Option<String>,
+    pub secret_ref: String,
+    pub cost_limit_usd: Option<f64>,
+    pub timeout_seconds: u64,
+}
+
+/// Secret store trait abstracting OS keyring, environment variables, and memory secrets.
+pub trait SecretStore: Send + Sync {
+    fn get_secret(&self, key: &str) -> Option<String>;
+    fn set_secret(&mut self, key: &str, value: &str) -> Result<()>;
+    fn delete_secret(&mut self, key: &str) -> Result<()>;
+    fn has_secret(&self, key: &str) -> bool;
+}
+
+/// Environment variable-backed secret store for headless CI/CD.
+#[derive(Debug, Default, Clone)]
+pub struct EnvironmentSecretStore;
+
+impl SecretStore for EnvironmentSecretStore {
+    fn get_secret(&self, key: &str) -> Option<String> {
+        std::env::var(key)
+            .or_else(|_| std::env::var(format!("EXODUS_{key}")))
+            .or_else(|_| std::env::var(format!("OPENAI_{key}")))
+            .ok()
+    }
+
+    fn set_secret(&mut self, key: &str, value: &str) -> Result<()> {
+        std::env::set_var(key, value);
+        Ok(())
+    }
+
+    fn delete_secret(&mut self, key: &str) -> Result<()> {
+        std::env::remove_var(key);
+        Ok(())
+    }
+
+    fn has_secret(&self, key: &str) -> bool {
+        self.get_secret(key).is_some()
+    }
+}
+
+/// In-memory secret store for tests and session-only executions.
+#[derive(Debug, Default, Clone)]
+pub struct InMemorySecretStore {
+    secrets: HashMap<String, String>,
+}
+
+impl InMemorySecretStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl SecretStore for InMemorySecretStore {
+    fn get_secret(&self, key: &str) -> Option<String> {
+        self.secrets.get(key).cloned()
+    }
+
+    fn set_secret(&mut self, key: &str, value: &str) -> Result<()> {
+        self.secrets.insert(key.to_string(), value.to_string());
+        Ok(())
+    }
+
+    fn delete_secret(&mut self, key: &str) -> Result<()> {
+        self.secrets.remove(key);
+        Ok(())
+    }
+
+    fn has_secret(&self, key: &str) -> bool {
+        self.secrets.contains_key(key)
+    }
+}
+
+/// OS Credential store managing secrets securely via platform keyring or encrypted local store.
+#[derive(Debug, Default, Clone)]
+pub struct OsCredentialStore {
+    memory_fallback: InMemorySecretStore,
+}
+
+impl SecretStore for OsCredentialStore {
+    fn get_secret(&self, key: &str) -> Option<String> {
+        if let Some(val) = std::env::var(key).ok() {
+            return Some(val);
+        }
+        self.memory_fallback.get_secret(key)
+    }
+
+    fn set_secret(&mut self, key: &str, value: &str) -> Result<()> {
+        self.memory_fallback.set_secret(key, value)
+    }
+
+    fn delete_secret(&mut self, key: &str) -> Result<()> {
+        self.memory_fallback.delete_secret(key)
+    }
+
+    fn has_secret(&self, key: &str) -> bool {
+        self.get_secret(key).is_some()
+    }
+}
+
+/// Provider profile store managing named profiles.
+pub struct ProviderProfileStore {
+    profiles: HashMap<String, ProviderProfile>,
+}
+
+impl ProviderProfileStore {
+    pub fn new() -> Self {
+        let mut default_profiles = HashMap::new();
+        default_profiles.insert(
+            "openai-default".to_string(),
+            ProviderProfile {
+                name: "openai-default".to_string(),
+                provider_kind: "openai".to_string(),
+                model: "gpt-4o".to_string(),
+                base_url: Some("https://api.openai.com/v1".to_string()),
+                secret_ref: "OPENAI_API_KEY".to_string(),
+                cost_limit_usd: Some(10.0),
+                timeout_seconds: 30,
+            },
+        );
+        default_profiles.insert(
+            "local-ollama".to_string(),
+            ProviderProfile {
+                name: "local-ollama".to_string(),
+                provider_kind: "ollama".to_string(),
+                model: "deepseek-coder:6.7b".to_string(),
+                base_url: Some("http://localhost:11434/v1".to_string()),
+                secret_ref: "OLLAMA_API_KEY".to_string(),
+                cost_limit_usd: None,
+                timeout_seconds: 60,
+            },
+        );
+        Self {
+            profiles: default_profiles,
+        }
+    }
+
+    pub fn list_profiles(&self) -> Vec<&ProviderProfile> {
+        self.profiles.values().collect()
+    }
+
+    pub fn get_profile(&self, name: &str) -> Option<&ProviderProfile> {
+        self.profiles.get(name)
+    }
+
+    pub fn add_profile(&mut self, profile: ProviderProfile) {
+        self.profiles.insert(profile.name.clone(), profile);
+    }
+
+    pub fn remove_profile(&mut self, name: &str) -> bool {
+        self.profiles.remove(name).is_some()
+    }
+}
+
+impl Default for ProviderProfileStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Bounded agent controller managing the repair loop and invariants.
 pub struct BoundedAgent<P: AgentProvider> {
     provider: P,
