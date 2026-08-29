@@ -1,0 +1,34 @@
+{
+  "units": [
+    {
+      "symbol_name": "calculate_fee",
+      "provenance": {
+        "OraclePass": {
+          "source": "Docstring",
+          "is_grounded": true
+        }
+      },
+      "assertions": [
+        {
+          "input_expr": "calculate_fee(100.0, 0.05)",
+          "expected_output_expr": "5.0"
+        }
+      ]
+    },
+    {
+      "symbol_name": "BankAccount",
+      "provenance": {
+        "OraclePass": {
+          "source": "Docstring",
+          "is_grounded": true
+        }
+      },
+      "assertions": [
+        {
+          "input_expr": "let mut acc = BankAccount::new(\"Alice\".to_string(), 100.0); acc.deposit(50.0, \"Salary\".to_string()); acc.get_balance()",
+          "expected_output_expr": "150.0"
+        }
+      ]
+    }
+  ]
+}
