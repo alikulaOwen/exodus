@@ -1,0 +1,29 @@
+[package]
+name = "exodus-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Command-line interface for Project Exodus"
+
+[[bin]]
+name = "exodus"
+path = "src/main.rs"
+
+[dependencies]
+exodus-core.workspace = true
+exodus-parser.workspace = true
+exodus-graph.workspace = true
+exodus-planner.workspace = true
+exodus-agent.workspace = true
+exodus-transform.workspace = true
+exodus-fallback.workspace = true
+exodus-verifier.workspace = true
+exodus-eval.workspace = true
+clap.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

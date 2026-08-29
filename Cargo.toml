@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/exodus-core",
+    "crates/exodus-parser",
+    "crates/exodus-graph",
+    "crates/exodus-planner",
+    "crates/exodus-agent",
+    "crates/exodus-transform",
+    "crates/exodus-fallback",
+    "crates/exodus-verifier",
+    "crates/exodus-eval",
+    "crates/exodus-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Exodus Contributors"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/exodus-migration/exodus"
+homepage = "https://github.com/exodus-migration/exodus"
+readme = "README.md"
+
+[workspace.dependencies]
+exodus-core = { path = "crates/exodus-core", version = "0.1.0" }
+exodus-parser = { path = "crates/exodus-parser", version = "0.1.0" }
+exodus-graph = { path = "crates/exodus-graph", version = "0.1.0" }
+exodus-planner = { path = "crates/exodus-planner", version = "0.1.0" }
+exodus-agent = { path = "crates/exodus-agent", version = "0.1.0" }
+exodus-transform = { path = "crates/exodus-transform", version = "0.1.0" }
+exodus-fallback = { path = "crates/exodus-fallback", version = "0.1.0" }
+exodus-verifier = { path = "crates/exodus-verifier", version = "0.1.0" }
+exodus-eval = { path = "crates/exodus-eval", version = "0.1.0" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1.40", features = ["full"] }
