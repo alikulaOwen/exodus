@@ -352,3 +352,80 @@ async fn unit_verification_passing_does_not_imply_module_integration_passing() {
     let _ = std::fs::remove_dir_all(&repo_root);
     let _ = std::fs::remove_dir_all(&tmp_src_dir);
 }
+
+/// Category 13/Two-run demo: `fixtures/two_run_demo/repo_a` and `repo_b` have identical underlying
+/// structural topologies and failure patterns under completely different symbol names (`process_item`
+/// vs `dispatch_job`). When a case is captured and promoted from repo A, the Case Engine's
+/// symbol-agnostic structural fingerprint matches repo B, enabling cross-repository knowledge reuse.
+#[tokio::test]
+async fn fixture_two_run_demo_case_learning_and_cross_repo_reuse() {
+    use exodus_case::{CaseCaptureInput, CaseStatus, FailureCategory};
+
+    let repo_a_dir = fixture("two_run_demo/repo_a");
+    let repo_b_dir = fixture("two_run_demo/repo_b");
+
+    let parser = PythonParser::new();
+    let parsed_a = parser.parse_repository(&repo_a_dir).unwrap();
+    let graph_a = SemanticGraph::from_parsed_repository(&parsed_a);
+
+    let parsed_b = parser.parse_repository(&repo_b_dir).unwrap();
+    let graph_b = SemanticGraph::from_parsed_repository(&parsed_b);
+
+    let storage_dir = std::env::temp_dir().join(format!("exodus_case_store_{}", uuid::Uuid::new_v4()));
+    let case_engine = CaseEngine::new(&storage_dir);
+
+    // 1. Run 1 (Repo A): encounter a failure on `process_item`, extract its localized ESG subgraph,
+    // and capture the case.
+    let unit_a = "function::worker::process_item";
+    let sub_a = graph_a.relevant_subgraph(unit_a);
+    let mut case = case_engine
+        .capture_failure(CaseCaptureInput {
+            run_id: "run-repo-a-01",
+            failure_category: FailureCategory::TypeMismatch,
+            unit_id: unit_a,
+            source_language: "python",
+            target_language: "rust",
+            graph: Some(&sub_a),
+            diagnostic: Some("mismatched types: expected `String`, found `&str`"),
+            failed_assertion: None,
+            source_observation: None,
+            target_observation: None,
+        })
+        .unwrap();
+
+    // 2. Promote the case with a verified repair strategy.
+    case.status = CaseStatus::Promoted;
+    case.successful_strategy = Some("Insert `.to_string()` on return string literals".to_string());
+    case.verified_success_count = 1;
+    case.applications_count = 1;
+    case_engine.save_case(&case).unwrap();
+
+    // 3. Run 2 (Repo B): encounter the same failure category on differently-named `dispatch_job`
+    // in repo B. Compute repo B's structural fingerprint and query promoted cases.
+    let unit_b = "function::task_runner::dispatch_job";
+    let sub_b = graph_b.relevant_subgraph(unit_b);
+    let fp_b = CaseEngine::compute_fingerprint(
+        &FailureCategory::TypeMismatch,
+        Some(&sub_b),
+        "python",
+        "rust",
+    );
+
+    assert_eq!(
+        case.structural_fingerprint, fp_b,
+        "Structural fingerprints must match across different symbols and repositories with identical topology"
+    );
+
+    let matches = case_engine
+        .search_promoted_cases(&fp_b, &FailureCategory::TypeMismatch)
+        .unwrap();
+
+    assert_eq!(matches.len(), 1, "Promoted case from repo A must be retrieved for repo B");
+    assert_eq!(
+        matches[0].successful_strategy.as_deref(),
+        Some("Insert `.to_string()` on return string literals")
+    );
+
+    let _ = std::fs::remove_dir_all(&storage_dir);
+}
+
