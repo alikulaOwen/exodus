@@ -282,6 +282,7 @@ name = "exodus-eval"
 version = "0.1.0"
 dependencies = [
  "exodus-agent",
+ "exodus-case",
  "exodus-core",
  "exodus-fallback",
  "exodus-graph",
@@ -294,6 +295,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -372,6 +374,7 @@ dependencies = [
  "exodus-graph",
  "exodus-parser",
  "exodus-transform",
+ "exodus-worktree",
  "regex",
  "serde",
  "serde_json",

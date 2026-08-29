@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0.0",
+  "contract_id": "contract-function-service-calculate_total",
+  "unit_id": "function::service::calculate_total",
+  "unit_name": "calculate_total",
+  "unit_kind": "function",
+  "source_signature": "calculate_total(products: list[Product]) -> int",
+  "target_signature": "calculate_total(products: Vec<Product>) -> i64",
+  "assertions": [
+    {
+      "case_id": "basic_sum",
+      "input": "calculate_total(vec![Product::new(\"a\".to_string(), 10), Product::new(\"b\".to_string(), 20), Product::new(\"c\".to_string(), 5)])",
+      "expected": "35",
+      "oracle": "differential_execution",
+      "evidence": "differential_execution: python3 scripts/ground_fixture_contracts.py (fixtures/03_module_dependency/{models,service}.py, captured 2026-08-29)"
+    },
+    {
+      "case_id": "empty_list",
+      "input": "calculate_total(vec![])",
+      "expected": "0",
+      "oracle": "differential_execution",
+      "evidence": "differential_execution: python3 scripts/ground_fixture_contracts.py (fixtures/03_module_dependency/{models,service}.py, captured 2026-08-29)"
+    }
+  ],
+  "verification_status": "failed"
+}

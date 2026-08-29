@@ -1,18 +1,19 @@
 {
   "fixtures_evaluated": 11,
-  "exodus_pass_rate_pct": 90.9090909090909,
-  "baseline_pass_rate_pct": 27.27272727272727,
-  "exodus_compilation_rate_pct": 100.0,
-  "baseline_compilation_rate_pct": 36.36363636363637,
+  "exodus_pass_rate_pct": 54.54545454545454,
+  "baseline_pass_rate_pct": 0.0,
+  "exodus_compilation_rate_pct": 63.63636363636363,
+  "baseline_compilation_rate_pct": 100.0,
   "total_migration_debts": 1,
-  "total_human_interventions": 0,
+  "total_human_interventions": 1,
   "results": [
     {
       "fixture_name": "01_typed_functions",
       "total_symbols": 3,
       "baseline_compiled": true,
-      "baseline_tests_passed": true,
+      "baseline_tests_passed": false,
       "exodus_outcome": "Verified",
+      "exodus_compiled": true,
       "exodus_tests_passed": true,
       "debts_recorded": 0,
       "human_approval_required": false
@@ -21,8 +22,9 @@
       "fixture_name": "02_class_conversion",
       "total_symbols": 1,
       "baseline_compiled": true,
-      "baseline_tests_passed": true,
+      "baseline_tests_passed": false,
       "exodus_outcome": "Verified",
+      "exodus_compiled": true,
       "exodus_tests_passed": true,
       "debts_recorded": 0,
       "human_approval_required": false
@@ -31,38 +33,42 @@
       "fixture_name": "03_module_dependency",
       "total_symbols": 2,
       "baseline_compiled": true,
-      "baseline_tests_passed": true,
+      "baseline_tests_passed": false,
       "exodus_outcome": "Verified",
-      "exodus_tests_passed": true,
+      "exodus_compiled": false,
+      "exodus_tests_passed": false,
       "debts_recorded": 0,
       "human_approval_required": false
     },
     {
       "fixture_name": "04_circular_dependency",
       "total_symbols": 2,
-      "baseline_compiled": false,
+      "baseline_compiled": true,
       "baseline_tests_passed": false,
       "exodus_outcome": "Verified",
-      "exodus_tests_passed": true,
+      "exodus_compiled": false,
+      "exodus_tests_passed": false,
       "debts_recorded": 0,
-      "human_approval_required": false
+      "human_approval_required": true
     },
     {
       "fixture_name": "05_unsupported_decorator",
       "total_symbols": 2,
-      "baseline_compiled": false,
+      "baseline_compiled": true,
       "baseline_tests_passed": false,
       "exodus_outcome": "Verified",
-      "exodus_tests_passed": true,
+      "exodus_compiled": false,
+      "exodus_tests_passed": false,
       "debts_recorded": 0,
       "human_approval_required": false
     },
     {
       "fixture_name": "06_dynamic_value",
       "total_symbols": 1,
-      "baseline_compiled": false,
+      "baseline_compiled": true,
       "baseline_tests_passed": false,
       "exodus_outcome": "Verified",
+      "exodus_compiled": true,
       "exodus_tests_passed": true,
       "debts_recorded": 0,
       "human_approval_required": false
@@ -70,10 +76,11 @@
     {
       "fixture_name": "07_missing_sdk",
       "total_symbols": 1,
-      "baseline_compiled": false,
+      "baseline_compiled": true,
       "baseline_tests_passed": false,
       "exodus_outcome": "Verified",
-      "exodus_tests_passed": true,
+      "exodus_compiled": false,
+      "exodus_tests_passed": false,
       "debts_recorded": 0,
       "human_approval_required": false
     },
@@ -83,6 +90,7 @@
       "baseline_compiled": true,
       "baseline_tests_passed": false,
       "exodus_outcome": "Verified",
+      "exodus_compiled": true,
       "exodus_tests_passed": true,
       "debts_recorded": 0,
       "human_approval_required": false
@@ -90,9 +98,10 @@
     {
       "fixture_name": "09_database_compat_wrapper",
       "total_symbols": 1,
-      "baseline_compiled": false,
+      "baseline_compiled": true,
       "baseline_tests_passed": false,
       "exodus_outcome": "Verified",
+      "exodus_compiled": true,
       "exodus_tests_passed": true,
       "debts_recorded": 0,
       "human_approval_required": false
@@ -100,9 +109,10 @@
     {
       "fixture_name": "10_deliberately_untranslatable_reflection",
       "total_symbols": 2,
-      "baseline_compiled": false,
+      "baseline_compiled": true,
       "baseline_tests_passed": false,
       "exodus_outcome": "Degraded",
+      "exodus_compiled": true,
       "exodus_tests_passed": false,
       "debts_recorded": 1,
       "human_approval_required": false
@@ -110,12 +120,27 @@
     {
       "fixture_name": "two_run_demo",
       "total_symbols": 2,
-      "baseline_compiled": false,
+      "baseline_compiled": true,
       "baseline_tests_passed": false,
       "exodus_outcome": "Verified",
+      "exodus_compiled": true,
       "exodus_tests_passed": true,
       "debts_recorded": 0,
       "human_approval_required": false
     }
-  ]
+  ],
+  "unit_level": {
+    "fixtures_with_grounded_contracts": 5,
+    "units_evaluated": 9,
+    "units_verified": 8,
+    "units_compatible": 0,
+    "units_degraded": 0,
+    "units_blocked": 1,
+    "assertions_total": 17,
+    "assertions_passed": 16,
+    "unit_contract_pass_rate_pct": 94.11764705882352,
+    "grounded_oracle_coverage_pct": 100.0,
+    "repair_attempts": 1,
+    "cases_captured": 1
+  }
 }

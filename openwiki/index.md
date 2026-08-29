@@ -35,6 +35,7 @@ Project Exodus is a graph-guided, agent-assisted legacy code migration engine de
 * [Transformation Engine](transformation-engine.md) — Deterministic mapping and neural transformation.
 * [Fallback and Repair Layer](fallback-and-repair-layer.md) — Graceful degradation, explicit stubs, and migration debt logging.
 * [Verification Lifecycle](verification-lifecycle.md) — Multi-tier verification: formatting, compilation, and behavior validation.
+* [Unit-Level Migration and Behavioral-Contract Verification](unit-verification.md) — Unit boundaries, contract provenance/oracle hierarchy, the per-unit gate, verification hierarchy, worktree commit behavior, and Case Engine integration.
 
 ### 5. Standards, Operations & Reference
 * [Artifact Schemas](artifact-schemas.md) — JSON schemas for execution records in `.exodus/`.

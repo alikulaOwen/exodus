@@ -120,6 +120,19 @@ impl PythonParser {
         Self
     }
 
+    /// True when a `function_definition` node is an `async def`. This tree-sitter-python grammar
+    /// version represents `async def foo():` as an ordinary `function_definition` node with an
+    /// `async` keyword *child* — there is no distinct `async_function_definition` node kind (the
+    /// grammar's node-kinds.json for older/other grammar versions did define one, which is why
+    /// that name still appears in match arms elsewhere in this file; checking for it via
+    /// `node.kind()` alone never matches against the currently vendored grammar and silently
+    /// classified every async function as synchronous).
+    fn node_is_async(node: Node) -> bool {
+        let mut cursor = node.walk();
+        let is_async = node.children(&mut cursor).any(|c| c.kind() == "async");
+        is_async
+    }
+
     fn create_evidence(node: Node, file_path: &Path, source: &str) -> SourceEvidence {
         let start_pos = node.start_position();
         let end_pos = node.end_position();
@@ -419,7 +432,7 @@ impl PythonParser {
                 });
             }
             "function_definition" | "async_function_definition" => {
-                let is_async = node.kind() == "async_function_definition";
+                let is_async = Self::node_is_async(node);
                 let is_method = scope.contains("::");
                 if let Some(func_def) =
                     Self::parse_function_node(node, file_path, source, scope, is_async, is_method)
@@ -481,7 +494,7 @@ impl PythonParser {
                             if member.kind() == "function_definition"
                                 || member.kind() == "async_function_definition"
                             {
-                                let is_async = member.kind() == "async_function_definition";
+                                let is_async = Self::node_is_async(member);
                                 if let Some(m) = Self::parse_function_node(
                                     member,
                                     file_path,
@@ -758,6 +771,49 @@ class Calculator:
         assert_eq!(parsed.classes.len(), 1);
         assert_eq!(parsed.classes[0].name, "Calculator");
         assert_eq!(parsed.classes[0].methods.len(), 2);
+    }
+
+    #[test]
+    fn test_async_function_and_method_detected() {
+        let code = r#"
+async def fetch(resource_id: str) -> str:
+    return "x"
+
+class Client:
+    async def get(self, url: str) -> str:
+        return url
+
+    def sync_method(self) -> int:
+        return 1
+"#;
+        let parser = PythonParser::new();
+        let parsed = parser.parse_source(Path::new("client.py"), code).unwrap();
+
+        assert_eq!(parsed.functions.len(), 1);
+        assert!(
+            parsed.functions[0].is_async,
+            "top-level `async def` must be detected as async"
+        );
+
+        assert_eq!(parsed.classes[0].methods.len(), 2);
+        let get_method = parsed.classes[0]
+            .methods
+            .iter()
+            .find(|m| m.name == "get")
+            .unwrap();
+        assert!(
+            get_method.is_async,
+            "`async def` method must be detected as async"
+        );
+        let sync_method = parsed.classes[0]
+            .methods
+            .iter()
+            .find(|m| m.name == "sync_method")
+            .unwrap();
+        assert!(
+            !sync_method.is_async,
+            "a plain `def` method must not be flagged async"
+        );
     }
 
     #[test]

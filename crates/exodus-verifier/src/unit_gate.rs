@@ -7,9 +7,7 @@ use crate::Verifier;
 use chrono::Utc;
 use exodus_agent::{AgentBounds, BoundedAgent, MockAgentProvider};
 use exodus_case::{CaseCaptureInput, CaseEngine, FailureCategory};
-use exodus_core::{
-    BehavioralContract, ExodusError, MigrationOutcome, Result, VerificationStatus,
-};
+use exodus_core::{BehavioralContract, ExodusError, MigrationOutcome, Result, VerificationStatus};
 use exodus_graph::{NodeKind, SemanticGraph, VerificationBoundary};
 use exodus_parser::{ParsedModule, ParsedRepository};
 use exodus_transform::{TransformOptions, TransformRequest, TransformationEngine};
@@ -60,11 +58,38 @@ pub struct UnitGateContext<'a> {
     pub repair_bounds: AgentBounds,
 }
 
-fn unit_id_for(boundary: &VerificationBoundary) -> String {
+pub fn unit_id_for(boundary: &VerificationBoundary) -> String {
     let mut ids = boundary.node_ids();
     ids.sort();
     ids.join("+")
 }
+
+/// A unit ID (`"function::math_ops::add"`, or a `+`-joined cluster of them) contains characters
+/// that aren't valid in a Rust module identifier. Derives a stable, collision-resistant one so
+/// each unit gets its own `src/<name>.rs` when multiple verified units accumulate into one growing
+/// target crate (see `pipeline::run_gated_migration`), instead of every unit colliding on the same
+/// generic module name.
+pub fn module_name_for(unit_id: &str) -> String {
+    let mut sanitized = String::new();
+    let mut last_was_underscore = false;
+    for c in unit_id.chars() {
+        if c.is_alphanumeric() {
+            sanitized.push(c);
+            last_was_underscore = false;
+        } else if !last_was_underscore {
+            sanitized.push('_');
+            last_was_underscore = true;
+        }
+    }
+    format!("unit_{sanitized}")
+}
+
+/// Fixed crate name for a single unit's isolated scratch build. Deliberately distinct from every
+/// possible `module_name_for` output: if the crate and its one module shared a name, a test's
+/// `use <name>::*;` would be genuinely ambiguous between "the module" and "the crate itself"
+/// (Rust integration tests can always refer to the crate under test by its own name) and fail to
+/// compile with E0659 regardless of whether the migrated code is correct.
+const UNIT_SCRATCH_CRATE_NAME: &str = "exodus_unit_under_test";
 
 /// Pulls the `FunctionDef`/`ClassDef`s that make up a boundary out of the full parsed repository,
 /// plus any `Type` node the boundary's members directly depend on (so a function referencing a
@@ -75,21 +100,26 @@ fn build_synthetic_module(
     boundary: &VerificationBoundary,
     repo: &ParsedRepository,
     graph: &SemanticGraph,
+    module_name: &str,
 ) -> ParsedModule {
     let mut wanted: HashSet<String> = boundary.node_ids().into_iter().collect();
 
-    let mut extra_types = Vec::new();
+    // A boundary member calling `p.get_price()` depends on the `Product` *method*, not the type
+    // node directly — pulling in that method (which drags its whole containing class along, via
+    // the class-inclusion pass below) or a directly-depended type is what makes the unit
+    // compilable in isolation.
+    let mut extra: Vec<String> = Vec::new();
     for id in &wanted {
         for dep in graph.dependencies_of(id) {
             if graph
                 .get_node(&dep)
-                .is_some_and(|n| n.kind == NodeKind::Type)
+                .is_some_and(|n| matches!(n.kind, NodeKind::Type | NodeKind::Method))
             {
-                extra_types.push(dep);
+                extra.push(dep);
             }
         }
     }
-    wanted.extend(extra_types);
+    wanted.extend(extra);
 
     let mut functions = Vec::new();
     let mut classes = Vec::new();
@@ -115,8 +145,8 @@ fn build_synthetic_module(
     }
 
     ParsedModule {
-        file_path: PathBuf::from("verification_unit.py"),
-        module_name: "verification_unit".to_string(),
+        file_path: PathBuf::from(format!("{module_name}.py")),
+        module_name: module_name.to_string(),
         imports: Vec::new(),
         functions,
         classes,
@@ -148,16 +178,30 @@ fn parse_test_results(stdout: &str) -> (usize, usize, Vec<String>) {
 /// assertion, comparing the migrated unit's actual output against the grounded `expected` value.
 /// Assumes assertions target a single top-level function named `unit_id`'s final segment; this is
 /// sufficient for the pure/stateful function contracts this pass grounds (see M3 fixtures).
-fn build_harness(contract: &BehavioralContract, module_name: &str) -> String {
-    let mut out = format!("use {module_name}::*;\n\n");
+/// `#[tokio::test]` async tests can call both async and sync migrated units — a sync call inside
+/// an async test body needs no `.await` and behaves identically to a plain `#[test]`. This lets
+/// one harness shape cover both without the gate needing to track async-ness separately from what
+/// the grounded contract's `input` expression already encodes (an async assertion's `input`
+/// includes its own trailing `.await`, authored alongside the differential-execution capture that
+/// produced `expected` — see `scripts/ground_fixture_contracts.py`).
+fn build_harness(contract: &BehavioralContract, crate_name: &str, module_name: &str) -> String {
+    // From an integration test in `tests/`, the crate under test is reached by its own crate
+    // name, not directly by its internal module path.
+    let mut out = format!("use {crate_name}::{module_name}::*;\n\n");
     for (i, assertion) in contract.assertions.iter().enumerate() {
+        // `assert_eq!`'s message argument is itself parsed as a format string by the macro — the
+        // literal fixed text here ("assertion `{}` ...") is the only part that gets macro-parsed;
+        // `case_id`/`oracle`/`evidence` are passed as separate `{:?}`-quoted string *arguments*,
+        // so any `{`/`}`/quotes they happen to contain (real evidence text, e.g. a captured path
+        // like `{models,service}.py`) is just literal data, never re-parsed as a format string.
         out.push_str(&format!(
-            "#[test]\nfn contract_assertion_{i}_{case}() {{\n    let actual = format!(\"{{:?}}\", {call});\n    assert_eq!(actual, {expected:?}, \"assertion `{case}` (oracle: {oracle}, evidence: {evidence})\");\n}}\n\n",
+            "#[tokio::test]\nasync fn contract_assertion_{i}_{case}() {{\n    let actual = format!(\"{{:?}}\", {call});\n    assert_eq!(actual, {expected:?}, \"assertion `{{}}` (oracle: {{}}, evidence: {{}})\", {case_id:?}, {oracle:?}, {evidence:?});\n}}\n\n",
             i = i,
             case = sanitize_ident(&assertion.case_id),
             call = assertion.input,
             expected = assertion.expected,
-            oracle = assertion.oracle,
+            case_id = assertion.case_id,
+            oracle = assertion.oracle.to_string(),
             evidence = assertion.evidence,
         ));
     }
@@ -188,8 +232,9 @@ pub fn load_fixture_contract(fixture_root: &Path, unit_id: &str) -> Option<Behav
 pub async fn run_unit_gate(
     boundary: &VerificationBoundary,
     ctx: &UnitGateContext<'_>,
-) -> Result<UnitVerificationResult> {
+) -> Result<(UnitVerificationResult, exodus_transform::TransformResult)> {
     let unit_id = unit_id_for(boundary);
+    let module_name = module_name_for(&unit_id);
     let is_cluster = boundary.is_cluster();
     let cluster_members = if is_cluster {
         boundary.node_ids()
@@ -197,27 +242,38 @@ pub async fn run_unit_gate(
         Vec::new()
     };
 
-    let synthetic_module = build_synthetic_module(boundary, ctx.repo, ctx.graph);
+    let synthetic_module = build_synthetic_module(boundary, ctx.repo, ctx.graph, &module_name);
     let engine = TransformationEngine::new();
     let transform_result = engine.transform_module(&TransformRequest {
         parsed_module: synthetic_module,
         options: TransformOptions::default(),
     })?;
 
-    let has_stub_fallback = transform_result
-        .fallbacks
-        .iter()
-        .any(|f| matches!(f.strategy, exodus_fallback::FallbackStrategy::TypedFailureStub));
+    let has_stub_fallback = transform_result.fallbacks.iter().any(|f| {
+        matches!(
+            f.strategy,
+            exodus_fallback::FallbackStrategy::TypedFailureStub
+        )
+    });
     let has_any_fallback = !transform_result.fallbacks.is_empty();
 
+    // `work_dir` is a scratch build directory that may be reused sequentially across units in the
+    // same run (see `pipeline::run_gated_migration`) — clear any previous unit's generated source
+    // so a stale, no-longer-referenced module file never lingers on disk.
+    let _ = std::fs::remove_dir_all(ctx.work_dir.join("src"));
+    let _ = std::fs::remove_dir_all(ctx.work_dir.join("tests"));
     std::fs::create_dir_all(&ctx.work_dir).map_err(ExodusError::from)?;
     let verifier = Verifier::new(&ctx.work_dir);
 
     let harness = ctx
         .contract
         .as_ref()
-        .map(|c| build_harness(c, "verification_unit"));
-    verifier.scaffold_target_crate("verification_unit", &[transform_result], harness.as_deref())?;
+        .map(|c| build_harness(c, UNIT_SCRATCH_CRATE_NAME, &module_name));
+    verifier.scaffold_target_crate(
+        UNIT_SCRATCH_CRATE_NAME,
+        std::slice::from_ref(&transform_result),
+        harness.as_deref(),
+    )?;
     let _ = verifier.run_formatter();
 
     let (mut compiled, mut diagnostics) = verifier.run_cargo_check()?;
@@ -246,10 +302,16 @@ pub async fn run_unit_gate(
     let mut assertions_failed = 0usize;
     let mut failed_assertion_case_id: Option<String> = None;
     let mut failed_test_names: Vec<String> = Vec::new();
+    // True when `cargo test` itself couldn't produce a test binary at all (e.g. a bug in the
+    // generated harness) as opposed to producing one that ran assertions and failed some — these
+    // must not be conflated: 0 passed + 0 failed is "nothing was actually verified," never success.
+    let mut harness_build_failed = false;
 
     if compiled && ctx.contract.is_some() {
+        let shared_target = std::env::temp_dir().join("exodus_shared_target");
         let output = std::process::Command::new("cargo")
             .arg("test")
+            .env("CARGO_TARGET_DIR", &shared_target)
             .current_dir(&ctx.work_dir)
             .output()
             .map_err(ExodusError::from)?;
@@ -260,6 +322,15 @@ pub async fn run_unit_gate(
         assertions_total = assertions_total.max(passed + failed);
         failed_test_names = names;
         failed_assertion_case_id = failed_test_names.first().cloned();
+        if !output.status.success() && passed == 0 && failed == 0 {
+            harness_build_failed = true;
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            diagnostics.push(exodus_core::Diagnostic::error(
+                "E_HARNESS_BUILD",
+                format!("behavioral test harness failed to build or run: {stderr}"),
+                None,
+            ));
+        }
     }
 
     let outcome = if !compiled {
@@ -268,7 +339,11 @@ pub async fn run_unit_gate(
         // Compiles, but there is no grounded behavioral evidence to verify against — this is
         // explicit, reported debt, never presented as verified behavior.
         MigrationOutcome::Degraded
-    } else if assertions_failed == 0 && assertions_total > 0 {
+    } else if !harness_build_failed
+        && assertions_failed == 0
+        && assertions_passed > 0
+        && assertions_passed == assertions_total
+    {
         if has_any_fallback {
             MigrationOutcome::Compatible
         } else {
@@ -298,22 +373,21 @@ pub async fn run_unit_gate(
         } else {
             format!("Failed assertions: {}", failed_test_names.join(", "))
         };
-        let (source_obs, target_obs) = if let (Some(contract), Some(test_name)) =
-            (&ctx.contract, &failed_assertion_case_id)
-        {
-            // Harness test names are `contract_assertion_<i>_<sanitized case_id>` — match by
-            // substring rather than reconstructing the exact index prefix.
-            let assertion = contract
-                .assertions
-                .iter()
-                .find(|a| test_name.contains(&sanitize_ident(&a.case_id)));
-            (
-                assertion.map(|a| a.expected.clone()),
-                Some(diagnostic_text.clone()),
-            )
-        } else {
-            (None, None)
-        };
+        let (source_obs, target_obs) =
+            if let (Some(contract), Some(test_name)) = (&ctx.contract, &failed_assertion_case_id) {
+                // Harness test names are `contract_assertion_<i>_<sanitized case_id>` — match by
+                // substring rather than reconstructing the exact index prefix.
+                let assertion = contract
+                    .assertions
+                    .iter()
+                    .find(|a| test_name.contains(&sanitize_ident(&a.case_id)));
+                (
+                    assertion.map(|a| a.expected.clone()),
+                    Some(diagnostic_text.clone()),
+                )
+            } else {
+                (None, None)
+            };
 
         let captured = ctx.case_engine.capture_failure(CaseCaptureInput {
             run_id: ctx.run_id,
@@ -359,7 +433,7 @@ pub async fn run_unit_gate(
     };
 
     write_artifacts(ctx, &unit_id, &result, has_stub_fallback)?;
-    Ok(result)
+    Ok((result, transform_result))
 }
 
 fn write_artifacts(

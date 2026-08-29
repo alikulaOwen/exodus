@@ -16,6 +16,7 @@ exodus-agent.workspace = true
 exodus-graph.workspace = true
 exodus-parser.workspace = true
 exodus-case.workspace = true
+exodus-worktree.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

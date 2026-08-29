@@ -1,10 +1,22 @@
 # Project Exodus: Agent Trajectories & Trace Logs
 
-This document contains representative trajectories capturing multi-agent interactions across the Exodus migration lifecycle.
+**Labeling correction (see `docs/reviews/unit-verification-audit.md`):** the JSON blocks below are
+**hand-authored illustrative examples**, not captured execution traces. The file paths named in
+each heading (`.exodus/trajectories/architecture_agent.json`, etc.) do **not exist on disk** —
+nothing in the codebase currently persists a structured per-role trajectory file at those paths.
+The only trajectory-shaped artifact that is real is `.exodus/trajectories/trajectory_sample.jsonl`
+(explicitly named "sample"), and `BoundedAgent::trajectory()`
+(`crates/exodus-agent/src/lib.rs`) genuinely records real `RepairAgent` steps in memory during a
+run, but nothing writes that to disk today. Only `MockAgentProvider` exists in this environment —
+no real LLM is wired in — so a *captured* trajectory from a real model is not currently obtainable
+here regardless. Treat every JSON block below as "what this would look like," not as evidence of
+an actual run.
+
+This document contains representative trajectories illustrating multi-agent interactions across the Exodus migration lifecycle.
 
 ---
 
-## 1. Architecture Agent Trajectory (`.exodus/trajectories/architecture_agent.json`)
+## 1. Architecture Agent Trajectory (illustrative example — not a real file)
 
 ```json
 {
@@ -36,7 +48,7 @@ This document contains representative trajectories capturing multi-agent interac
 
 ---
 
-## 2. Migration Agent Trajectory (`.exodus/trajectories/migration_agent.json`)
+## 2. Migration Agent Trajectory (illustrative example — not a real file)
 
 ```json
 {
@@ -66,7 +78,7 @@ This document contains representative trajectories capturing multi-agent interac
 
 ---
 
-## 3. Bounded Repair Agent Trajectory (`.exodus/trajectories/repair_agent.json`)
+## 3. Bounded Repair Agent Trajectory (illustrative example — not a real file)
 
 ```json
 {

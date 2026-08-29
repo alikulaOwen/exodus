@@ -103,7 +103,10 @@ pub enum VerificationBoundary {
     Unit { node_id: String },
     /// Multiple nodes that form a strongly connected component and therefore cannot be compiled or
     /// verified independently — the cluster itself is the smallest valid verification boundary.
-    Cluster { node_ids: Vec<String>, reason: String },
+    Cluster {
+        node_ids: Vec<String>,
+        reason: String,
+    },
 }
 
 impl VerificationBoundary {
@@ -576,6 +579,12 @@ impl SemanticGraph {
     /// Builds an ESG instance from a parsed repository representation.
     pub fn from_parsed_repository(parsed: &ParsedRepository) -> Self {
         let mut graph = Self::new();
+        // Populated as functions/methods are added below, then used in a second pass to resolve
+        // `CallExpr.callee` (raw call-site text, e.g. "get_price" or "obj.get_price") into real
+        // qualified node IDs. This can only run after every module's nodes exist, since a call may
+        // reference a function defined in a module visited later in `parsed.modules`.
+        let mut qualified_id_by_name: HashMap<String, String> = HashMap::new();
+        let mut candidates_by_bare_name: HashMap<String, Vec<String>> = HashMap::new();
 
         // 1. Add Repository Node
         let repo_id = "repo::root".to_string();
@@ -661,10 +670,16 @@ impl SemanticGraph {
 
                     graph.add_edge(SemanticEdge {
                         from: class_id.clone(),
-                        to: method_id,
+                        to: method_id.clone(),
                         relationship: RelationKind::Contains,
                         evidence: Some(method.evidence.clone()),
                     });
+
+                    qualified_id_by_name.insert(method.qualified_name.clone(), method_id.clone());
+                    candidates_by_bare_name
+                        .entry(method.name.clone())
+                        .or_default()
+                        .push(method_id);
                 }
             }
 
@@ -685,22 +700,16 @@ impl SemanticGraph {
 
                 graph.add_edge(SemanticEdge {
                     from: mod_id.clone(),
-                    to: func_id,
+                    to: func_id.clone(),
                     relationship: RelationKind::Contains,
                     evidence: Some(func.evidence.clone()),
                 });
-            }
 
-            // Add calls
-            for call in &module.calls {
-                let caller_id = format!("function::{}", call.caller_scope);
-                let callee_id = format!("function::{}", call.callee);
-                graph.add_edge(SemanticEdge {
-                    from: caller_id,
-                    to: callee_id,
-                    relationship: RelationKind::Calls,
-                    evidence: Some(call.evidence.clone()),
-                });
+                qualified_id_by_name.insert(func.qualified_name.clone(), func_id.clone());
+                candidates_by_bare_name
+                    .entry(func.name.clone())
+                    .or_default()
+                    .push(func_id);
             }
 
             // Add unsupported constructs
@@ -730,6 +739,74 @@ impl SemanticGraph {
                     relationship: RelationKind::DependsOn,
                     evidence: Some(unsupp.evidence.clone()),
                 });
+            }
+        }
+
+        // 3. Resolve module-level imports into real Imports edges. Deferred for the same reason as
+        // calls below: the target module may be visited later in `parsed.modules`. Imports of
+        // external/stdlib packages that were never parsed as part of this repository are skipped
+        // rather than creating a dangling edge.
+        for module in &parsed.modules {
+            let from_mod_id = format!("module::{}", module.module_name);
+            for import in &module.imports {
+                let to_mod_id = format!("module::{}", import.module);
+                if to_mod_id != from_mod_id && graph.nodes.contains_key(&to_mod_id) {
+                    graph.add_edge(SemanticEdge {
+                        from: from_mod_id.clone(),
+                        to: to_mod_id,
+                        relationship: RelationKind::Imports,
+                        evidence: Some(import.evidence.clone()),
+                    });
+                }
+            }
+        }
+
+        // 4. Resolve calls into real Calls edges. This runs after every module's nodes exist (a
+        // call may reference a function defined in a module visited later above) and after a call
+        // site's raw callee text (a bare name like "get_price", or an attribute expression like
+        // "product.get_price") is resolved to the qualified node ID actually built above — a
+        // literal `format!("function::{}", call.callee)` (the previous approach) could never match
+        // any real node, because every function/method qualified_name always carries a
+        // module/class prefix that raw call-site text never includes.
+        for module in &parsed.modules {
+            for call in &module.calls {
+                let caller_id = qualified_id_by_name
+                    .get(&call.caller_scope)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        // Module-level call (not inside any function/method).
+                        format!("module::{}", module.module_name)
+                    });
+
+                let bare_callee = call.callee.rsplit('.').next().unwrap_or(&call.callee);
+                let Some(candidates) = candidates_by_bare_name.get(bare_callee) else {
+                    // Unresolvable (stdlib call, external dependency, or a name Exodus doesn't
+                    // track) — skip rather than create a dangling edge to a node that never existed.
+                    continue;
+                };
+
+                // Prefer a candidate defined in the caller's own module (the common case for a
+                // same-file call); otherwise fall back to the first candidate in sorted order for
+                // determinism. This is a best-effort heuristic, not full semantic name resolution
+                // (no import-alias tracking) — ambiguous cross-module calls to same-named symbols
+                // may resolve to the wrong candidate.
+                let module_prefix = format!("::{}::", module.module_name);
+                let mut sorted_candidates = candidates.clone();
+                sorted_candidates.sort();
+                let callee_id = sorted_candidates
+                    .iter()
+                    .find(|id| id.contains(&module_prefix))
+                    .or_else(|| sorted_candidates.first())
+                    .cloned();
+
+                if let Some(callee_id) = callee_id {
+                    graph.add_edge(SemanticEdge {
+                        from: caller_id,
+                        to: callee_id,
+                        relationship: RelationKind::Calls,
+                        evidence: Some(call.evidence.clone()),
+                    });
+                }
             }
         }
 
@@ -1009,7 +1086,10 @@ mod tests {
 
         let class_boundary = units
             .iter()
-            .find(|u| u.node_ids().contains(&"type::bank_account::BankAccount".to_string()))
+            .find(|u| {
+                u.node_ids()
+                    .contains(&"type::bank_account::BankAccount".to_string())
+            })
             .unwrap();
         assert!(class_boundary.is_cluster());
         let mut ids = class_boundary.node_ids();

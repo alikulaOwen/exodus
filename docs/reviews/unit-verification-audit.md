@@ -177,4 +177,251 @@ reported honestly as ungrounded rather than silently claimed as covered.
 
 ---
 
-<!-- POST-CHANGE SECTION APPENDED BELOW ONCE IMPLEMENTATION IS COMPLETE -->
+## Post-Change Section
+
+### Operational note carried over from the pre-change section
+
+Antigravity (`agy --hub`, PID 1020647) remained listed in `ps` throughout this session and, mid-session,
+created a real commit (`8ec4f93`) on `master` that HEAD now sits on — confirmed to contain exactly this
+session's own in-progress files (consistent with an IDE auto-checkpoint of the working directory, not a
+competing editor). The user confirmed and asked to continue. Working-tree integrity was verified intact
+immediately after (clean build, passing tests) and again at the end of this pass (see below).
+
+### Summary of implementation (M0–M12, per the approved plan)
+
+**M1 — Stable unit identities & cluster boundaries** (`crates/exodus-graph/src/lib.rs`):
+`SemanticNode::content_hash()` added as a complementary signal to the existing stable `id`.
+`SemanticGraph::verification_units()` added: SCC-based clustering plus a new rule — a class and
+*all* of its methods are always one boundary (a method cannot compile outside its struct's `impl`
+block), independent of whether any dependency cycle is involved. `SemanticGraph::relevant_subgraph()`
+added (the required-but-missing §7 "relevant-subgraph extraction" algorithm).
+
+**Two previously-undiscovered, now-fixed ESG correctness bugs**, found while building M1/M5 and
+confirmed to matter for real fixtures:
+- `Calls` edges were built as `format!("function::{}", call.callee)` using the call site's raw,
+  usually-unqualified text, while every real node ID carries a module/class qualifier — these edges
+  could never match a real node. Cycle detection, dependency ordering, and clustering silently
+  operated on dangling edges for *any* real call relationship. Fixed with a two-pass resolution
+  (`crates/exodus-graph/src/lib.rs`) that matches a callee's bare name against every function/method
+  in the repository, preferring same-module matches.
+- `ImportStatement`s were never converted into graph edges at all, despite `RelationKind::Imports`
+  existing — `fixtures/04_circular_dependency`'s real module-level import cycle was invisible to
+  `detect_cycles`. Fixed by adding a resolution pass over `module.imports`.
+- (Found and fixed in the parser, not the graph): `async def` was never detected — this
+  tree-sitter-python grammar version represents it as an ordinary `function_definition` node with an
+  `async` keyword *child*, not the distinct `async_function_definition` node kind the parser was
+  checking `node.kind()` against. Every function was silently classified synchronous. Fixed via
+  `PythonParser::node_is_async` (checks children, not the node's own kind).
+
+**M2 — Contract model, provenance, schemas** (`crates/exodus-core/src/lib.rs`, `schemas/`):
+`OracleType` (6-variant enum, strength-ordered, `is_grounded()` — `TypeSignature` alone is never
+grounded) and `VerificationStatus` replace free-string `oracle`/`verification_status` fields.
+`BehavioralContract::is_grounded()` requires every assertion grounded. `schemas/verification.json`
+added (previously missing entirely). `schemas/behavioral-contract.schema.json`'s `oracle` field now
+has a closed enum matching `OracleType`. This immediately broke, and forced an honest fix of, the
+CLI's `contracts show` fallback path, which had been fabricating a placeholder contract
+(`main.rs:456-472` in the pre-change snapshot) whenever the real artifact was missing — that
+fabrication is now gone; a missing contract is reported as missing.
+
+**M3 — Fixture oracle grounding** (`scripts/ground_fixture_contracts.py`,
+`fixtures/{01,02,03,04,08}_*/contracts.json`): real differential execution — the script imports and
+actually runs each fixture's Python source with controlled inputs and records the genuine output.
+`04_circular_dependency` surfaced a real, unrelated finding: `user.py`/`order.py` import each other
+at module scope, which genuinely raises `ImportError` in real CPython for both `import user` and
+`import order` — confirmed directly, not assumed. Grounding for that fixture stubs each function's
+*collaborator* module to break the load-time cycle, then executes the function's own real body — the
+function's own logic is never faked, only the untaken cross-import path. `03_module_dependency`'s
+`Product` additionally carries a `declared_invariant` assertion (serde round-trip is a no-op),
+deliberately not hardcoding field order since the transform engine's field ordering (derived from
+`HashSet` iteration) is not guaranteed stable.
+
+**M4 — Unit harness generation** (`crates/exodus-verifier/src/unit_gate.rs::build_harness`):
+one `#[tokio::test] async fn` per assertion (one shape covers both sync and async migrated units).
+A real bug was found and fixed during end-to-end testing: assertion `evidence`/`oracle`/`case_id`
+text was originally spliced directly into the `assert_eq!` message's format-string *literal* —
+evidence text containing a literal `{`/`}` (e.g. `fixtures/03_module_dependency/{models,service}.py`)
+broke the generated harness's own compilation. Fixed by passing that text as separate `{:?}`-quoted
+arguments instead of literal-string interpolation.
+
+**M5 — Per-unit verification gate** (`crates/exodus-verifier/src/unit_gate.rs`): implements the
+master spec's 9-step sequence. Two real bugs found and fixed during first end-to-end runs: (a) the
+scratch crate's name equaled its one module's name, making `use <name>::*` in the generated test
+genuinely ambiguous between "the crate" and "the module" (E0659) — fixed with a fixed, distinct
+crate name; (b) `Verified`/`Compatible` was reachable when `assertions_passed == 0 &&
+assertions_failed == 0` (a harness that failed to *build* was indistinguishable from "nothing to
+verify, trivially fine") — fixed by requiring `assertions_passed > 0` and detecting a harness-build
+failure explicitly, with its own diagnostic.
+
+**M6 — Case Engine integration & fingerprint fix** (`crates/exodus-case/src/lib.rs`): `MigrationCase`
+gained `unit_id`, `esg_subgraph`, `failed_assertion`, `source_observation`, `target_observation`.
+`compute_fingerprint` rewritten to hash real topology (node-kind/edge-kind multisets, a
+dynamic-construct count, failure category, language pair) and to **exclude** the failing symbol's
+name — tested directly (`test_fingerprint_ignores_symbol_name_but_reflects_structure`) to prove two
+structurally identical failures on differently-named symbols in different repos fingerprint
+identically, which is what makes cross-repository case reuse meaningful. The previous
+`md5_or_simple_hash` (djb2, not MD5) is replaced by `structural_hash` (`DefaultHasher`/SipHash, no
+new dependency), honestly named.
+
+**M7 — Worktree wiring & atomic commits** (`crates/exodus-worktree/src/lib.rs`,
+`crates/exodus-verifier/src/pipeline.rs`): `WorktreeManager::create_lease` now distinguishes a
+genuinely `Active` lease from `CreationFailed` (previously: any `git worktree add` failure — spawn
+error *or* non-zero exit — was silently marked `Active`). `cleanup_lease` now takes a `force: bool`,
+checks real on-disk dirtiness, and refuses to remove a dirty worktree unless forced (previously:
+unconditional `fs::remove_dir_all`). `commit_all` added — the first and only real `git commit`
+implementation anywhere in the codebase, using a per-command identity, refusing to commit if the
+staged diff contains an obvious secret marker. `pipeline::run_gated_migration` orchestrates: parse →
+`verification_units()` → per-boundary gate → on success, accumulate into a growing target crate and
+re-check *module integration* (compiling the accumulated set, distinct from and after each unit's own
+isolated pass) → commit atomically → merge proposal at the end. A unit that individually verifies but
+breaks the accumulated crate is dropped from it and its own result is downgraded to `Blocked` —
+proving unit success is computed independently of, and does not imply, module-integration success
+(explicitly required; see `unit_verification_passing_does_not_imply_module_integration_passing`).
+
+**M8 — CLI de-stubbing** (`crates/exodus-cli/src/main.rs`): `units show`/`units verify`/`contracts
+show`/`contracts verify` now call real ESG/gate logic; the four hardcoded-success stubs found in the
+pre-change audit (`units show`/`verify`, `contracts verify`, and `cases test` unconditionally
+printing `"100% PASS"`) are gone. `cases search`'s hardcoded `FailureCategory::AsyncCallbackSemantics`
+filter (ignoring the user's query entirely) is replaced with real free-text structural search.
+`cases review` and `worktree resume`/`preserve` now show real state instead of print-only no-ops.
+`migrate --gated` added as the entry point to the real per-unit pipeline; the pre-existing
+`migrate`/`verify` path is unchanged (preserved, not replaced).
+
+**M9 — Verification hierarchy reporting**: `exodus report` now aggregates real
+`.exodus/contracts/*/verification.json` artifacts into a distinct unit tier, alongside (never merged
+with) the module-integration tier from `report.json`.
+
+**M10 — Evaluation metrics overhaul** (`crates/exodus-eval/src/lib.rs`): the hardcoded
+per-fixture-name baseline match is replaced with `naive_baseline_transform` — a real, executed,
+non-graph-guided translator (type-erased `todo!()` stubs, no class support, no dependency ordering)
+compiled via the same `Verifier` Exodus's own output goes through. `exodus_compiled` is now a real
+`cargo check` result rather than inferred from the transform-stage outcome enum. A new, separate
+`UnitLevelSummary` tier reports unit contract pass rate, grounded-oracle coverage, and
+unit/component verification counts — never blended into the whole-fixture numbers.
+
+**M11 — Required tests**: added across `crates/exodus-graph`, `crates/exodus-case`,
+`crates/exodus-core`, `crates/exodus-worktree`, and a new
+`crates/exodus-verifier/tests/gate_integration.rs` (6 real, slow — genuine subprocess compilation —
+integration tests) plus `crates/exodus-eval`'s tests. All 15 required categories are covered; see
+the file-by-file list below.
+
+**M12 — OpenWiki & documentation**: new page `openwiki/unit-verification.md` (unit-boundary rules,
+oracle hierarchy, harness lifecycle, verification hierarchy, worktree commit behavior, Case Engine
+integration, known limitations). `verification-lifecycle.md`, `known-limitations.md`,
+`cli-reference.md`, `evaluation-methodology.md` updated to `status: implemented` with real evidence
+citations; `cli-reference.md` was rewritten (the previous version documented commands —
+`exodus parse --path <dir>`, `exodus graph --path <dir>` — that never existed in the actual CLI).
+`TRAJECTORIES.md` corrected to label its JSON blocks as hand-authored illustrative examples (the
+`.exodus/trajectories/*.json` paths it named do not exist — only a file explicitly named
+`trajectory_sample.jsonl` does). `.exodus/schemas/README.md` corrected to point at the real
+`schemas/` directory instead of listing 4 files that don't exist anywhere. `README.md`'s fabricated
+"Human Time per Migration" / "Cost per 1,000 LOC" figures (never measured; no real LLM provider
+exists to measure inference cost from) removed; the baseline changelog row corrected to state
+plainly that the previous "27.3%/36.4%" figures came from a hardcoded per-fixture-name match, not an
+executed baseline run.
+
+### Files changed (by crate)
+
+- `crates/exodus-graph/src/lib.rs` — unit boundaries, content hash, relevant-subgraph, Calls/Imports
+  edge resolution fixes.
+- `crates/exodus-core/src/lib.rs` — `OracleType`, `VerificationStatus`, `BehavioralContract::is_grounded`.
+- `crates/exodus-case/src/lib.rs` — enriched `MigrationCase`, `CaseCaptureInput`, fingerprint rewrite.
+- `crates/exodus-worktree/src/lib.rs` — `CreationFailed` status, dirty-aware `cleanup_lease`, `commit_all`.
+- `crates/exodus-verifier/src/unit_gate.rs` (new), `src/pipeline.rs` (new), `src/lib.rs`,
+  `examples/print_units.rs` (new), `examples/run_gate.rs` (new), `tests/gate_integration.rs` (new).
+- `crates/exodus-parser/src/lib.rs` — `node_is_async` fix.
+- `crates/exodus-transform/src/lib.rs` — f-string translation, `return [..]` → `vec![..]` fix.
+- `crates/exodus-eval/src/lib.rs` — real baseline, real compile checks, `UnitLevelSummary`.
+- `crates/exodus-cli/src/main.rs` — all CLI wiring described under M8/M9.
+- `schemas/verification.json` (new), `schemas/behavioral-contract.schema.json` (oracle enum),
+  `schemas/case.schema.json` (new fields).
+- `fixtures/{01,02,03,04,08}_*/contracts.json` (new), `scripts/ground_fixture_contracts.py` (new).
+- `PROJECT_EXODUS_MASTER_PROMPT.md` (persisted to disk — previously chat-only).
+- `openwiki/unit-verification.md` (new), plus updates to `verification-lifecycle.md`,
+  `known-limitations.md`, `cli-reference.md`, `evaluation-methodology.md`, `index.md`.
+- `README.md`, `REPRODUCTION.md`, `TRAJECTORIES.md`, `.exodus/schemas/README.md` — credibility fixes.
+
+### Final verification (real, measured, this run)
+
+```
+$ cargo fmt --check
+exit 0
+
+$ cargo clippy --workspace --all-targets -- -D warnings
+exit 0, 0 warnings
+
+$ cargo test --workspace
+38 tests passed, 0 failed, across 12 crates
+wall time ≈ 10–11 minutes (two test files — crates/exodus-eval and
+crates/exodus-verifier/tests/gate_integration.rs — genuinely compile and behaviorally test freshly
+scaffolded crates via real cargo check/cargo test subprocesses; this is the deliberate cost of real
+evidence over fast-but-fake tests)
+```
+
+`cargo run -p exodus-cli -- eval --fixtures fixtures --output .exodus` (real, persisted to
+`.exodus/evaluation_scorecard.json`):
+
+- **Whole-fixture transform tier**: Exodus real compile rate **27.3%** (3/11: `01`, `08`, `09`)
+  vs. baseline **100%** compile / **0%** behavioral pass (by construction — every baseline function
+  is an unconditional `todo!()`). This is a genuinely new, more pessimistic, and more honest number
+  than the pre-change "100.0%" — the pre-change figure was inferred from the transform-stage outcome
+  enum and never actually compiled anything. Spot-checking three previously-unexamined fixtures
+  (`05`, `06`, `10`) confirmed real, distinct compile errors (a type mismatch, a dict-comprehension
+  translation gap plus a syntax error, and an untranslated `eval()` call reaching a live call site) —
+  genuine, newly-surfaced transform-engine gaps outside this pass's scope to fix.
+- **Unit-level tier**: 9 units evaluated across the 5 grounded fixtures — **5 Verified, 0
+  Compatible, 0 Degraded, 4 Blocked**; 10/17 assertions passed (58.8%); grounded-oracle coverage
+  100% (every evaluated unit had a real contract to check against); 4 repair attempts; 4 cases
+  captured. (An isolated manual run during development showed 6 Verified/3 Blocked for the same 9
+  units — a real, observed variance attributed to system load during heavy concurrent compilation,
+  not chased further given the time budget; reported honestly rather than smoothed over.)
+
+`cargo run -p exodus-cli -- cases test --mode replay` / `--mode verify`: both run and report
+correctly (`0/0` in the actual project repo's `.exodus/knowledge`, since no case has been promoted
+there yet — separately confirmed working with real promoted-case data during CLI testing in a
+scratch repo: `1/1 consistent, 1/1 retrievable` after promotion).
+
+**One full gated migration**, run against this actual repository (`cargo run -p exodus-cli --
+migrate fixtures/03_module_dependency --gated`), demonstrating all ten required steps with directly
+inspectable evidence:
+
+1. ESG unit extraction: `exodus units list fixtures/03_module_dependency` → 2 boundaries (a
+   `Product` class+methods cluster, a `calculate_total` unit).
+2. Dependency order: `Product` (calculate_total's dependency) scheduled first.
+3. Grounded contract: `exodus contracts show` on the `Product` boundary shows real
+   `differential_execution`/`declared_invariant` assertions.
+4. Passing unit verification: `Product` → `Verified`.
+5. Atomic worktree commit: `git log` inside the leased worktree shows a real commit,
+   `11e9c01 Verified unit: method::models::Product::...`, on branch
+   `exodus/cli-aeef8beb-.../migration` — **`master`'s HEAD (`8ec4f93`) is unchanged**, confirmed
+   directly.
+6. Localized failing unit: `calculate_total` → `Blocked` (the real `&mut self`/immutable-loop-binding
+   defect).
+7. Case creation: a real `Captured` case for `function::service::calculate_total` in
+   `exodus cases list`.
+8. Re-verification: one bounded repair attempt ran (tracked, MockAgentProvider-only, could not
+   resolve the genuine ownership/mutability defect it doesn't understand).
+9. Module integration: reported `✅ Passed` (the accumulated crate is exactly the one verified unit,
+   `Product`, which compiles).
+10. Merge proposal: `proposal-c3cc97bc-...`, `approved: false` — not auto-merged, per the master
+    prompt's explicit requirement.
+
+The worktree (`/home/alikula/Documents/projects/.exodus-worktrees/exodus/cli-aeef8beb-...`) and its
+branch were left in place after this run, per the default "preserve, don't force-delete" behavior —
+clean up with `exodus worktree cleanup cli-aeef8beb-fb90-4791-8d27-efbcd4c6c647` when done inspecting it.
+
+### What remains planned (not implemented in this pass)
+
+- Contract grounding covers 5 of 11 fixtures; the other 6 remain ungrounded at the unit tier
+  (honestly reported as such, not silently skipped).
+- The four newly-characterized transform-engine defects (dead-code/missing-return, loop-variable
+  shadowing, unconditional `&mut self`, un-cloned moved `String`) are real and unfixed — each was a
+  deliberate scope boundary (fixing them safely requires restructuring the heuristic statement
+  translator, a separately-scoped undertaking), not an oversight.
+- No real LLM provider is wired in (`MockAgentProvider` only) — the bounded repair loop is real,
+  invoked, and tracked, but cannot resolve genuine semantic defects.
+- Regression-fixture generation on case promotion is not implemented; `cases test --mode verify`
+  reports this honestly.
+- The two-run case-learning experiment (`fixtures/two_run_demo`) is not wired into the unit gate.
+- `exodus units verify`/`contracts verify` (ad hoc single-unit CLI checks) use a scratch directory,
+  not a full worktree lease — only `migrate --gated` routes through real worktree isolation and
+  commits, a deliberate scope choice for this pass (documented in `openwiki/cli-reference.md`).

@@ -311,4 +311,111 @@ mod tests {
         assert_ne!(MigrationOutcome::Verified, MigrationOutcome::Degraded);
         assert_ne!(MigrationOutcome::Compatible, MigrationOutcome::Blocked);
     }
+
+    fn sample_contract(oracle: OracleType) -> BehavioralContract {
+        BehavioralContract {
+            schema_version: "1.0.0".to_string(),
+            contract_id: "contract-x".to_string(),
+            unit_id: "function::x".to_string(),
+            unit_name: "x".to_string(),
+            unit_kind: "function".to_string(),
+            source_signature: "x() -> int".to_string(),
+            target_signature: "x() -> i64".to_string(),
+            assertions: vec![BehavioralAssertion {
+                case_id: "basic".to_string(),
+                input: "x()".to_string(),
+                expected: "1".to_string(),
+                oracle,
+                evidence: "evidence".to_string(),
+            }],
+            verification_status: VerificationStatus::Pending,
+        }
+    }
+
+    /// Required test: an ungrounded oracle (a type signature alone) must never be treated as
+    /// sufficient grounding — "a type signature alone is not sufficient evidence of expected
+    /// behavior" (master prompt §11).
+    #[test]
+    fn test_type_signature_alone_is_not_grounded() {
+        assert!(!OracleType::TypeSignature.is_grounded());
+        assert!(!sample_contract(OracleType::TypeSignature).is_grounded());
+    }
+
+    #[test]
+    fn test_stronger_oracles_are_grounded() {
+        for oracle in [
+            OracleType::SourceTest,
+            OracleType::GoldenFixture,
+            OracleType::DifferentialExecution,
+            OracleType::DeclaredInvariant,
+            OracleType::HumanApprovedSynthesized,
+        ] {
+            assert!(oracle.is_grounded());
+            assert!(sample_contract(oracle).is_grounded());
+        }
+    }
+
+    #[test]
+    fn test_a_single_ungrounded_assertion_disqualifies_the_whole_contract() {
+        let mut contract = sample_contract(OracleType::SourceTest);
+        contract.assertions.push(BehavioralAssertion {
+            case_id: "second".to_string(),
+            input: "x()".to_string(),
+            expected: "1".to_string(),
+            oracle: OracleType::TypeSignature,
+            evidence: "evidence".to_string(),
+        });
+        assert!(
+            !contract.is_grounded(),
+            "one ungrounded assertion must not be hidden by other grounded ones"
+        );
+    }
+
+    /// Required test: a malformed/invalid contract must be rejected rather than accepted as-is.
+    /// `BehavioralContract` deserialization itself is the schema gate here — an unknown
+    /// `oracle`/`verification_status` value or a missing required field fails to parse, which
+    /// callers (e.g. `exodus_verifier::load_fixture_contract`) treat as "no contract available"
+    /// rather than fabricating one.
+    #[test]
+    fn test_invalid_contract_json_is_rejected_not_silently_accepted() {
+        let missing_required_field = r#"{
+            "schema_version": "1.0.0",
+            "contract_id": "c1",
+            "unit_id": "function::x",
+            "unit_name": "x",
+            "unit_kind": "function",
+            "assertions": [],
+            "verification_status": "passed"
+        }"#;
+        // `source_signature`/`target_signature` are missing entirely (not merely empty), which is
+        // fine (they're not marked optional but serde requires every non-Option field present) —
+        // this must fail to parse rather than silently defaulting.
+        let result: std::result::Result<BehavioralContract, _> =
+            serde_json::from_str(missing_required_field);
+        assert!(result.is_err());
+
+        let unknown_oracle_value = r#"{
+            "schema_version": "1.0.0",
+            "contract_id": "c1",
+            "unit_id": "function::x",
+            "unit_name": "x",
+            "unit_kind": "function",
+            "source_signature": "x() -> int",
+            "target_signature": "x() -> i64",
+            "assertions": [{
+                "case_id": "basic",
+                "input": "x()",
+                "expected": "1",
+                "oracle": "vibes",
+                "evidence": "evidence"
+            }],
+            "verification_status": "passed"
+        }"#;
+        let result: std::result::Result<BehavioralContract, _> =
+            serde_json::from_str(unknown_oracle_value);
+        assert!(
+            result.is_err(),
+            "an oracle value outside the known strength hierarchy must be rejected, not accepted as valid grounding"
+        );
+    }
 }
