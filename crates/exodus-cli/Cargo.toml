@@ -6,7 +6,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Command-line interface for Project Exodus"
+description = "Command-line interface and dispatch flows for Project Exodus"
 
 [[bin]]
 name = "exodus"
@@ -21,9 +21,15 @@ exodus-agent.workspace = true
 exodus-transform.workspace = true
 exodus-fallback.workspace = true
 exodus-verifier.workspace = true
+exodus-case.workspace = true
+exodus-worktree.workspace = true
 exodus-eval.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 clap.workspace = true
 tokio.workspace = true
-anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+uuid.workspace = true

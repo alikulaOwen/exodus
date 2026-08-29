@@ -1,0 +1,203 @@
+{
+  "nodes": {
+    "module::math_ops": {
+      "id": "module::math_ops",
+      "name": "math_ops",
+      "kind": "Module",
+      "qualified_name": "math_ops",
+      "file_path": "fixtures/01_typed_functions/math_ops.py",
+      "risk_score": 30,
+      "risk_level": "Low",
+      "evidence": null,
+      "metadata": {}
+    },
+    "function::math_ops::add": {
+      "id": "function::math_ops::add",
+      "name": "add",
+      "kind": "Function",
+      "qualified_name": "math_ops::add",
+      "file_path": "fixtures/01_typed_functions/math_ops.py",
+      "risk_score": 15,
+      "risk_level": "Low",
+      "evidence": {
+        "span": {
+          "file_path": "fixtures/01_typed_functions/math_ops.py",
+          "start": {
+            "line": 1,
+            "column": 1,
+            "byte_offset": 0
+          },
+          "end": {
+            "line": 3,
+            "column": 17,
+            "byte_offset": 76
+          }
+        },
+        "snippet": "def add(a: int, b: int) -> int:\n    \"\"\"Add two integers.\"\"\"\n    return a + b",
+        "ast_node_kind": "function_definition"
+      },
+      "metadata": {}
+    },
+    "function::math_ops::is_positive": {
+      "id": "function::math_ops::is_positive",
+      "name": "is_positive",
+      "kind": "Function",
+      "qualified_name": "math_ops::is_positive",
+      "file_path": "fixtures/01_typed_functions/math_ops.py",
+      "risk_score": 15,
+      "risk_level": "Low",
+      "evidence": {
+        "span": {
+          "file_path": "fixtures/01_typed_functions/math_ops.py",
+          "start": {
+            "line": 12,
+            "column": 1,
+            "byte_offset": 274
+          },
+          "end": {
+            "line": 16,
+            "column": 21,
+            "byte_offset": 375
+          }
+        },
+        "snippet": "def is_positive(val: int) -> bool:\n    if val > 0:\n        return True\n    else:\n        return False",
+        "ast_node_kind": "function_definition"
+      },
+      "metadata": {}
+    },
+    "function::math_ops::multiply_list": {
+      "id": "function::math_ops::multiply_list",
+      "name": "multiply_list",
+      "kind": "Function",
+      "qualified_name": "math_ops::multiply_list",
+      "file_path": "fixtures/01_typed_functions/math_ops.py",
+      "risk_score": 20,
+      "risk_level": "Low",
+      "evidence": {
+        "span": {
+          "file_path": "fixtures/01_typed_functions/math_ops.py",
+          "start": {
+            "line": 5,
+            "column": 1,
+            "byte_offset": 78
+          },
+          "end": {
+            "line": 10,
+            "column": 18,
+            "byte_offset": 272
+          }
+        },
+        "snippet": "def multiply_list(nums: list[int], factor: int) -> list[int]:\n    \"\"\"Multiply list of numbers by factor.\"\"\"\n    result = []\n    for n in nums:\n        result.append(n * factor)\n    return result",
+        "ast_node_kind": "function_definition"
+      },
+      "metadata": {}
+    },
+    "repo::root": {
+      "id": "repo::root",
+      "name": "fixtures/01_typed_functions",
+      "kind": "Repository",
+      "qualified_name": "root",
+      "file_path": "fixtures/01_typed_functions",
+      "risk_score": 15,
+      "risk_level": "Low",
+      "evidence": null,
+      "metadata": {}
+    }
+  },
+  "edges": [
+    {
+      "from": "repo::root",
+      "to": "module::math_ops",
+      "relationship": "Contains",
+      "evidence": null
+    },
+    {
+      "from": "module::math_ops",
+      "to": "function::math_ops::add",
+      "relationship": "Contains",
+      "evidence": {
+        "span": {
+          "file_path": "fixtures/01_typed_functions/math_ops.py",
+          "start": {
+            "line": 1,
+            "column": 1,
+            "byte_offset": 0
+          },
+          "end": {
+            "line": 3,
+            "column": 17,
+            "byte_offset": 76
+          }
+        },
+        "snippet": "def add(a: int, b: int) -> int:\n    \"\"\"Add two integers.\"\"\"\n    return a + b",
+        "ast_node_kind": "function_definition"
+      }
+    },
+    {
+      "from": "module::math_ops",
+      "to": "function::math_ops::multiply_list",
+      "relationship": "Contains",
+      "evidence": {
+        "span": {
+          "file_path": "fixtures/01_typed_functions/math_ops.py",
+          "start": {
+            "line": 5,
+            "column": 1,
+            "byte_offset": 78
+          },
+          "end": {
+            "line": 10,
+            "column": 18,
+            "byte_offset": 272
+          }
+        },
+        "snippet": "def multiply_list(nums: list[int], factor: int) -> list[int]:\n    \"\"\"Multiply list of numbers by factor.\"\"\"\n    result = []\n    for n in nums:\n        result.append(n * factor)\n    return result",
+        "ast_node_kind": "function_definition"
+      }
+    },
+    {
+      "from": "module::math_ops",
+      "to": "function::math_ops::is_positive",
+      "relationship": "Contains",
+      "evidence": {
+        "span": {
+          "file_path": "fixtures/01_typed_functions/math_ops.py",
+          "start": {
+            "line": 12,
+            "column": 1,
+            "byte_offset": 274
+          },
+          "end": {
+            "line": 16,
+            "column": 21,
+            "byte_offset": 375
+          }
+        },
+        "snippet": "def is_positive(val: int) -> bool:\n    if val > 0:\n        return True\n    else:\n        return False",
+        "ast_node_kind": "function_definition"
+      }
+    },
+    {
+      "from": "function::math_ops::multiply_list",
+      "to": "function::result.append",
+      "relationship": "Calls",
+      "evidence": {
+        "span": {
+          "file_path": "fixtures/01_typed_functions/math_ops.py",
+          "start": {
+            "line": 9,
+            "column": 9,
+            "byte_offset": 229
+          },
+          "end": {
+            "line": 9,
+            "column": 34,
+            "byte_offset": 254
+          }
+        },
+        "snippet": "result.append(n * factor)",
+        "ast_node_kind": "call"
+      }
+    }
+  ]
+}

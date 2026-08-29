@@ -6,7 +6,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Explicit fallback generators and migration debt handlers for unsupported semantics"
+description = "Explicit fallback generation and migration debt accounting for Project Exodus"
 
 [dependencies]
 exodus-core.workspace = true

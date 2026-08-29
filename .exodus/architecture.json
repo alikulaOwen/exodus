@@ -1,0 +1,10 @@
+{
+  "total_nodes": 5,
+  "total_edges": 5,
+  "module_count": 1,
+  "type_count": 0,
+  "function_count": 3,
+  "unsupported_count": 0,
+  "circular_dependencies": [],
+  "high_risk_nodes": []
+}

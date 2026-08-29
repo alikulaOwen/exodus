@@ -10,6 +10,7 @@ description = "Exodus Semantic Graph (ESG) data structures and graph algorithms"
 
 [dependencies]
 exodus-core.workspace = true
+exodus-parser.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

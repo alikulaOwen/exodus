@@ -1,0 +1,12 @@
+fixture_name,symbols,exodus_outcome,exodus_tests_passed,debts_recorded,human_review_required,baseline_tests_passed
+01_typed_functions,3,Verified,true,0,false,true
+02_class_conversion,1,Verified,true,0,false,true
+03_module_dependency,2,Verified,true,0,false,true
+04_circular_dependency,2,Verified,true,0,false,false
+05_unsupported_decorator,2,Verified,true,0,false,false
+06_dynamic_value,1,Verified,true,0,false,false
+07_missing_sdk,1,Verified,true,0,false,false
+08_async_function,1,Verified,true,0,false,false
+09_database_compat_wrapper,1,Verified,true,0,false,false
+10_deliberately_untranslatable_reflection,2,Degraded,false,1,false,false
+two_run_demo,2,Verified,true,0,false,false

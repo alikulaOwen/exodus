@@ -6,11 +6,19 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Evaluation harnesses, benchmarking, and outcome metrics for Project Exodus"
+description = "Evaluation benchmark suite, single-agent baseline comparison, and scorecard generation"
 
 [dependencies]
 exodus-core.workspace = true
+exodus-parser.workspace = true
+exodus-graph.workspace = true
+exodus-planner.workspace = true
+exodus-agent.workspace = true
+exodus-transform.workspace = true
+exodus-fallback.workspace = true
+exodus-verifier.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+tokio.workspace = true
