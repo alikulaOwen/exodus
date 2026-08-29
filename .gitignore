@@ -11,6 +11,9 @@ dist/
 # Runtime execution state (preserve schemas & contracts, ignore run traces)
 .exodus/runs/
 .exodus/cache/
+.exodus/contracts/
+.exodus/knowledge/cases/
+.exodus/data/
 
 # OS and Editor files
 .DS_Store
