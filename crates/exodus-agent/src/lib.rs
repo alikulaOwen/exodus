@@ -129,6 +129,127 @@ impl AgentProvider for MockAgentProvider {
     }
 }
 
+/// Real LLM Agent Provider connecting to any OpenAI-compatible API endpoint
+/// (e.g. OpenAI, OpenRouter, Anthropic proxy, Gemini proxy, DeepSeek, local Ollama / vLLM).
+pub struct OpenAiCompatibleProvider {
+    pub api_key: String,
+    pub base_url: String,
+    pub model: String,
+    client: reqwest::Client,
+}
+
+impl OpenAiCompatibleProvider {
+    pub fn new(
+        api_key: impl Into<String>,
+        base_url: impl Into<String>,
+        model: impl Into<String>,
+    ) -> Self {
+        Self {
+            api_key: api_key.into(),
+            base_url: base_url.into().trim_end_matches('/').to_string(),
+            model: model.into(),
+            client: reqwest::Client::new(),
+        }
+    }
+
+    /// Automatically constructs provider from environment variables:
+    /// - API key: `EXODUS_LLM_API_KEY` or `OPENAI_API_KEY`
+    /// - Base URL: `EXODUS_LLM_BASE_URL` or `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
+    /// - Model: `EXODUS_LLM_MODEL` or `OPENAI_MODEL` (default: `gpt-4o`)
+    pub fn from_env() -> Option<Self> {
+        let api_key = std::env::var("EXODUS_LLM_API_KEY")
+            .or_else(|_| std::env::var("OPENAI_API_KEY"))
+            .ok()?;
+        let base_url = std::env::var("EXODUS_LLM_BASE_URL")
+            .or_else(|_| std::env::var("OPENAI_BASE_URL"))
+            .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
+        let model = std::env::var("EXODUS_LLM_MODEL")
+            .or_else(|_| std::env::var("OPENAI_MODEL"))
+            .unwrap_or_else(|_| "gpt-4o".to_string());
+
+        Some(Self::new(api_key, base_url, model))
+    }
+}
+
+#[async_trait]
+impl AgentProvider for OpenAiCompatibleProvider {
+    fn provider_name(&self) -> &'static str {
+        "OpenAiCompatibleProvider"
+    }
+
+    async fn complete(&self, system_prompt: &str, user_prompt: &str) -> Result<AgentResponse> {
+        let url = format!("{}/chat/completions", self.base_url);
+        let start = std::time::Instant::now();
+
+        let request_body = serde_json::json!({
+            "model": self.model,
+            "messages": [
+                { "role": "system", "content": system_prompt },
+                { "role": "user", "content": user_prompt }
+            ],
+            "temperature": 0.1
+        });
+
+        let res = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| exodus_core::ExodusError::Other(format!("LLM HTTP request failed: {e}")))?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let text = res.text().await.unwrap_or_default();
+            return Err(exodus_core::ExodusError::Other(format!(
+                "LLM API error ({status}): {text}"
+            )));
+        }
+
+        let json: serde_json::Value = res
+            .json()
+            .await
+            .map_err(|e| exodus_core::ExodusError::Other(format!("Failed to parse LLM JSON response: {e}")))?;
+
+        let content = json["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+
+        let prompt_tokens = json["usage"]["prompt_tokens"].as_u64().unwrap_or(0) as usize;
+        let completion_tokens = json["usage"]["completion_tokens"].as_u64().unwrap_or(0) as usize;
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        let code = extract_code_snippet(&content);
+
+        Ok(AgentResponse {
+            raw_content: content,
+            proposed_code: code,
+            explanation: "LLM synthesis completed.".to_string(),
+            tokens_prompt: prompt_tokens,
+            tokens_completion: completion_tokens,
+            duration_ms,
+        })
+    }
+}
+
+fn extract_code_snippet(text: &str) -> Option<String> {
+    if let Some(start) = text.find("```") {
+        let after_start = &text[start + 3..];
+        let code_start = if let Some(newline) = after_start.find('\n') {
+            &after_start[newline + 1..]
+        } else {
+            after_start
+        };
+        if let Some(end) = code_start.find("```") {
+            return Some(code_start[..end].trim().to_string());
+        }
+    }
+    Some(text.trim().to_string())
+}
+
 /// Bounded agent controller managing the repair loop and invariants.
 pub struct BoundedAgent<P: AgentProvider> {
     provider: P,
@@ -276,4 +397,23 @@ mod tests {
         assert!(!scrubbed.contains("sk-proj"));
         assert!(scrubbed.contains("[REDACTED_SECRET]"));
     }
+
+    #[test]
+    fn test_code_snippet_extraction() {
+        let markdown = "Here is the code:\n```rust\npub fn hello() -> bool { true }\n```\nExplanation...";
+        let code = extract_code_snippet(markdown);
+        assert_eq!(code.as_deref(), Some("pub fn hello() -> bool { true }"));
+
+        let raw = "pub fn direct() {}";
+        assert_eq!(extract_code_snippet(raw).as_deref(), Some("pub fn direct() {}"));
+    }
+
+    #[test]
+    fn test_openai_provider_config() {
+        let provider = OpenAiCompatibleProvider::new("test-key", "https://api.openai.com/v1/", "gpt-4o-mini");
+        assert_eq!(provider.provider_name(), "OpenAiCompatibleProvider");
+        assert_eq!(provider.base_url, "https://api.openai.com/v1");
+        assert_eq!(provider.model, "gpt-4o-mini");
+    }
 }
+
