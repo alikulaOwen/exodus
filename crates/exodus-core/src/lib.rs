@@ -300,6 +300,217 @@ pub enum ExodusError {
     Other(String),
 }
 
+/// An actionable triage break report generated when transformation fails or hits migration debt.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriageBreakReport {
+    pub report_id: String,
+    pub timestamp: String,
+    pub unit_id: String,
+    pub source_language: String,
+    pub target_language: String,
+    pub failure_tier: MigrationOutcome,
+    pub failure_category: String,
+    pub compiler_diagnostics: Vec<String>,
+    pub failed_assertion: Option<String>,
+    pub source_snippet: String,
+    pub target_snippet: Option<String>,
+    pub repair_attempts: Vec<FailureTrajectory>,
+    pub structural_fingerprint: Option<String>,
+    pub recommended_labels: Vec<String>,
+}
+
+impl TriageBreakReport {
+    pub fn to_markdown_issue(&self) -> String {
+        let mut md = String::new();
+        md.push_str(&format!("# [Migration Break] `{}` ({} -> {})\n\n", self.unit_id, self.source_language, self.target_language));
+        md.push_str(&format!("**Outcome Tier:** `{}` | **Category:** `{}` | **Timestamp:** `{}`\n\n", self.failure_tier, self.failure_category, self.timestamp));
+        
+        if let Some(ref fp) = self.structural_fingerprint {
+            md.push_str(&format!("**Structural Fingerprint:** `{}`\n\n", fp));
+        }
+
+        md.push_str("## Source Snippet\n```");
+        md.push_str(&self.source_language);
+        md.push_str("\n");
+        md.push_str(&self.source_snippet);
+        md.push_str("\n```\n\n");
+
+        if let Some(ref target) = self.target_snippet {
+            md.push_str("## Target Snippet (Failed)\n```");
+            md.push_str(&self.target_language);
+            md.push_str("\n");
+            md.push_str(target);
+            md.push_str("\n```\n\n");
+        }
+
+        md.push_str("## Compiler & Test Diagnostics\n```text\n");
+        for diag in &self.compiler_diagnostics {
+            md.push_str(diag);
+            md.push_str("\n");
+        }
+        if let Some(ref fa) = self.failed_assertion {
+            md.push_str(&format!("Failed Assertion: {}\n", fa));
+        }
+        md.push_str("```\n\n");
+
+        if !self.repair_attempts.is_empty() {
+            md.push_str("## Repair Trajectory (Bounded Attempts)\n");
+            for att in &self.repair_attempts {
+                md.push_str(&format!("* **Attempt {}**: {}\n", att.iteration, att.reason));
+                if let Some(ref diff) = att.patch_diff {
+                    md.push_str(&format!("  ```diff\n{}\n  ```\n", diff));
+                }
+            }
+            md.push_str("\n");
+        }
+
+        md.push_str("## Reproduction Payload\n");
+        md.push_str("To reproduce locally in Project Exodus:\n");
+        md.push_str(&format!("```bash\nexodus migrate --from {} --to {} --gated\n```\n", self.source_language, self.target_language));
+        md
+    }
+}
+
+/// A recorded repair iteration trajectory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailureTrajectory {
+    pub iteration: u32,
+    pub reason: String,
+    pub patch_diff: Option<String>,
+    pub outcome: MigrationOutcome,
+}
+
+/// Migration execution mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MigrationMode {
+    /// Deterministic AST reverse-engineering and code synthesis (0 tokens, instant).
+    #[default]
+    Direct,
+    /// Full agent reasoning, prompt orchestration, and autonomous repair.
+    Ai,
+    /// Direct AST synthesis first, with gated bounded AI repair on fallbacks/debts.
+    Hybrid,
+}
+
+impl std::fmt::Display for MigrationMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Direct => write!(f, "direct (reverse-engineering)"),
+            Self::Ai => write!(f, "ai (autonomous agent)"),
+            Self::Hybrid => write!(f, "hybrid (direct + gated ai repair)"),
+        }
+    }
+}
+
+/// The 7 scientific SDLC lifecycle stages for Project Exodus modernization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SdlcStage {
+    /// 1. Problem Analysis: AST parsing, symbol extraction, debt detection.
+    Analysis,
+    /// 2. Research & Knowledge Retrieval: Embedded catalog & promoted case lookup.
+    Research,
+    /// 3. Architecture Thesis Formulation: Target system hypotheses.
+    ThesisFormulation,
+    /// 4. System Flow Design: Topological waves, contract definitions.
+    FlowDesign,
+    /// 5. Implementation: Direct AST reverse-engineering or AI workload.
+    Implementation,
+    /// 6. Empirical Verification: Real compiler checks & behavioral oracle tests.
+    EmpiricalVerification,
+    /// 7. Maintenance & Feedback Loop: Case capture, debt logging, promotion.
+    FeedbackCasePromotion,
+}
+
+/// SDLC and Modern System Design architectural check categories.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SdlcCategory {
+    Observability,
+    Configuration12Factor,
+    LifecycleAndResilience,
+    SecurityAndAuth,
+    DataStorage,
+    ApiAndRouting,
+    DeploymentAndCI,
+}
+
+impl std::fmt::Display for SdlcCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Observability => write!(f, "Observability & Tracing"),
+            Self::Configuration12Factor => write!(f, "12-Factor App & Configuration"),
+            Self::LifecycleAndResilience => write!(f, "Lifecycle, Graceful Shutdown & Resilience"),
+            Self::SecurityAndAuth => write!(f, "Security, Headers & Auth"),
+            Self::DataStorage => write!(f, "Data Storage & Connection Pooling"),
+            Self::ApiAndRouting => write!(f, "API Routing & Health Probes"),
+            Self::DeploymentAndCI => write!(f, "Containerization & CI/CD"),
+        }
+    }
+}
+
+/// Architectural modernization recommendation produced during planning.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModernizationRecommendation {
+    pub id: String,
+    pub category: SdlcCategory,
+    pub title: String,
+    pub description: String,
+    pub rationale: String,
+    pub impact_level: RiskLevel,
+    pub remediation_code_sample: Option<String>,
+}
+
+/// Formulation of an empirical modernization hypothesis for target system design.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArchitectureThesis {
+    pub thesis_id: String,
+    pub legacy_problem_statement: String,
+    pub hypothesis: String,
+    pub target_architectural_pattern: String,
+    pub expected_outcomes: Vec<String>,
+    pub verification_assertions: Vec<String>,
+}
+
+/// Comprehensive SDLC & System Design Audit Report generated during planning.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct SdlcAuditReport {
+    pub health_score: u8,
+    pub passed_checks: Vec<String>,
+    pub missing_capabilities: Vec<String>,
+    pub recommendations: Vec<ModernizationRecommendation>,
+    pub architecture_thesis: Option<ArchitectureThesis>,
+}
+
+/// Preset Intra-Language / Framework Modernization catalog.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModernizationPreset {
+    Python2To3,
+    PythonModernTyping,
+    CommonJsToEsm,
+    ReactClassToFunctional,
+    ExpressToFastifyOrHono,
+    TokioSyncToAsync,
+    Rust2018To2024,
+    Custom(String),
+}
+
+impl std::fmt::Display for ModernizationPreset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Python2To3 => write!(f, "python2-to-3"),
+            Self::PythonModernTyping => write!(f, "python-modern-typing"),
+            Self::CommonJsToEsm => write!(f, "commonjs-to-esm"),
+            Self::ReactClassToFunctional => write!(f, "react-class-to-functional"),
+            Self::ExpressToFastifyOrHono => write!(f, "express-to-hono"),
+            Self::TokioSyncToAsync => write!(f, "tokio-sync-to-async"),
+            Self::Rust2018To2024 => write!(f, "rust-2018-to-2024"),
+            Self::Custom(name) => write!(f, "{}", name),
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, ExodusError>;
 
 #[cfg(test)]
@@ -417,5 +628,78 @@ mod tests {
             result.is_err(),
             "an oracle value outside the known strength hierarchy must be rejected, not accepted as valid grounding"
         );
+    }
+
+    #[test]
+    fn test_triage_break_report_markdown_generation() {
+        let report = TriageBreakReport {
+            report_id: "triage-001".to_string(),
+            timestamp: "2026-08-30T09:50:00Z".to_string(),
+            unit_id: "function::auth::verify_token".to_string(),
+            source_language: "python".to_string(),
+            target_language: "rust".to_string(),
+            failure_tier: MigrationOutcome::Blocked,
+            failure_category: "TypeMismatch".to_string(),
+            compiler_diagnostics: vec!["error[E0308]: mismatched types".to_string()],
+            failed_assertion: Some("assert verify_token('secret') == True".to_string()),
+            source_snippet: "def verify_token(t): return t == 'secret'".to_string(),
+            target_snippet: Some("pub fn verify_token(t: &str) -> bool { t == 1 }".to_string()),
+            repair_attempts: vec![FailureTrajectory {
+                iteration: 1,
+                reason: "Attempted integer literal comparison".to_string(),
+                patch_diff: Some("- t == 1\n+ t == \"secret\"".to_string()),
+                outcome: MigrationOutcome::Blocked,
+            }],
+            structural_fingerprint: Some("fp-sha256-abc123".to_string()),
+            recommended_labels: vec!["bug:migration-break".to_string(), "lang:python-to-rust".to_string()],
+        };
+
+        let md = report.to_markdown_issue();
+        assert!(md.contains("# [Migration Break] `function::auth::verify_token`"));
+        assert!(md.contains("error[E0308]: mismatched types"));
+        assert!(md.contains("fp-sha256-abc123"));
+    }
+
+    #[test]
+    fn test_modernization_presets_display() {
+        assert_eq!(ModernizationPreset::Python2To3.to_string(), "python2-to-3");
+        assert_eq!(ModernizationPreset::CommonJsToEsm.to_string(), "commonjs-to-esm");
+        assert_eq!(ModernizationPreset::ExpressToFastifyOrHono.to_string(), "express-to-hono");
+    }
+
+    #[test]
+    fn test_sdlc_and_migration_mode_models() {
+        assert_eq!(MigrationMode::default(), MigrationMode::Direct);
+        assert_eq!(MigrationMode::Direct.to_string(), "direct (reverse-engineering)");
+        assert_eq!(MigrationMode::Ai.to_string(), "ai (autonomous agent)");
+        assert_eq!(MigrationMode::Hybrid.to_string(), "hybrid (direct + gated ai repair)");
+
+        let thesis = ArchitectureThesis {
+            thesis_id: "thesis-1".to_string(),
+            legacy_problem_statement: "Blocking thread pool".to_string(),
+            hypothesis: "Async Tokio + Axum eliminates thread exhaustion".to_string(),
+            target_architectural_pattern: "Event-driven asynchronous actor model".to_string(),
+            expected_outcomes: vec!["Sub-10ms p99 latency".to_string()],
+            verification_assertions: vec!["cargo test passes".to_string()],
+        };
+        assert_eq!(thesis.thesis_id, "thesis-1");
+
+        let audit = SdlcAuditReport {
+            health_score: 85,
+            passed_checks: vec!["Structured Logging".to_string()],
+            missing_capabilities: vec!["/healthz probe".to_string()],
+            recommendations: vec![ModernizationRecommendation {
+                id: "rec-1".to_string(),
+                category: SdlcCategory::ApiAndRouting,
+                title: "Add Healthcheck Endpoints".to_string(),
+                description: "Expose /healthz and /readyz".to_string(),
+                rationale: "Required for Kubernetes and cloud probes".to_string(),
+                impact_level: RiskLevel::Medium,
+                remediation_code_sample: Some("pub async fn healthz() -> &'static str { \"OK\" }".to_string()),
+            }],
+            architecture_thesis: Some(thesis),
+        };
+        assert_eq!(audit.health_score, 85);
+        assert_eq!(audit.recommendations.len(), 1);
     }
 }

@@ -17,3 +17,6 @@ thiserror.workspace = true
 tracing.workspace = true
 chrono.workspace = true
 uuid.workspace = true
+exodus-toolchain.workspace = true
+exodus-store.workspace = true
+exodus-parser.workspace = true

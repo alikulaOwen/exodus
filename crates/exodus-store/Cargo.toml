@@ -12,6 +12,7 @@ description = "Embedded storage layer, GraphStore abstractions, and knowledge pe
 exodus-core.workspace = true
 exodus-graph.workspace = true
 exodus-case.workspace = true
+exodus-toolchain.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -20,3 +21,7 @@ chrono.workspace = true
 async-trait.workspace = true
 tokio.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+tempfile = "3.10"
+

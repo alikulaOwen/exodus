@@ -12,6 +12,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+pub mod sdlc_catalog;
+pub use sdlc_catalog::*;
+
+pub mod dynamic_memory;
+pub use dynamic_memory::*;
+
+pub mod skills_discovery;
+pub use skills_discovery::*;
+
 /// Persistent record representing an ESG node in the database.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GraphNodeRecord {
@@ -107,6 +116,8 @@ pub trait KnowledgeStore: Send + Sync {
     async fn get_contract(&self, unit_id: &str) -> Result<Option<BehavioralContract>>;
     async fn list_contracts(&self) -> Result<Vec<BehavioralContract>>;
     async fn save_verification_run(&mut self, run: &VerificationRecord) -> Result<()>;
+    async fn save_framework_rule(&mut self, rule: &exodus_toolchain::FrameworkRule) -> Result<()>;
+    async fn get_framework_registry(&self) -> Result<exodus_toolchain::FrameworkRegistry>;
     async fn export_all(&self, target_dir: &Path) -> Result<ExportManifest>;
     async fn import_all(&mut self, source_dir: &Path) -> Result<ImportReport>;
 }
@@ -120,6 +131,7 @@ pub struct MemoryGraphStore {
     cases: Arc<RwLock<HashMap<String, MigrationCase>>>,
     contracts: Arc<RwLock<HashMap<String, BehavioralContract>>>,
     runs: Arc<RwLock<Vec<VerificationRecord>>>,
+    frameworks: Arc<RwLock<exodus_toolchain::FrameworkRegistry>>,
 }
 
 impl MemoryGraphStore {
@@ -339,11 +351,23 @@ impl KnowledgeStore for MemoryGraphStore {
         Ok(())
     }
 
+    async fn save_framework_rule(&mut self, rule: &exodus_toolchain::FrameworkRule) -> Result<()> {
+        let mut f = self.frameworks.write().await;
+        f.upsert_rule(rule.clone());
+        Ok(())
+    }
+
+    async fn get_framework_registry(&self) -> Result<exodus_toolchain::FrameworkRegistry> {
+        let f = self.frameworks.read().await;
+        Ok(f.clone())
+    }
+
     async fn export_all(&self, target_dir: &Path) -> Result<ExportManifest> {
         let cases = self.list_cases().await?;
         let contracts = self.list_contracts().await?;
         let snaps = self.snapshots.read().await;
         let runs = self.runs.read().await;
+        let fw = self.frameworks.read().await;
 
         let cases_dir = target_dir.join("cases");
         let contracts_dir = target_dir.join("contracts");
@@ -351,6 +375,8 @@ impl KnowledgeStore for MemoryGraphStore {
         fs::create_dir_all(&cases_dir).map_err(ExodusError::from)?;
         fs::create_dir_all(&contracts_dir).map_err(ExodusError::from)?;
         fs::create_dir_all(&snaps_dir).map_err(ExodusError::from)?;
+
+        let _ = fw.save_to_dir(target_dir);
 
         for case in &cases {
             let p = cases_dir.join(format!("{}.json", case.case_id));
@@ -393,6 +419,13 @@ impl KnowledgeStore for MemoryGraphStore {
             snapshots_imported: 0,
             errors: Vec::new(),
         };
+
+        let fw_file = source_dir.join("framework_rules.json");
+        if fw_file.exists() {
+            let loaded_fw = exodus_toolchain::FrameworkRegistry::load_or_init(source_dir);
+            let mut fw = self.frameworks.write().await;
+            *fw = loaded_fw;
+        }
 
         let cases_dir = source_dir.join("cases");
         if cases_dir.is_dir() {
@@ -585,6 +618,14 @@ impl KnowledgeStore for SurrealGraphStore {
         self.memory_backend.save_verification_run(run).await
     }
 
+    async fn save_framework_rule(&mut self, rule: &exodus_toolchain::FrameworkRule) -> Result<()> {
+        self.memory_backend.save_framework_rule(rule).await
+    }
+
+    async fn get_framework_registry(&self) -> Result<exodus_toolchain::FrameworkRegistry> {
+        self.memory_backend.get_framework_registry().await
+    }
+
     async fn export_all(&self, target_dir: &Path) -> Result<ExportManifest> {
         self.memory_backend.export_all(target_dir).await
     }
@@ -624,5 +665,44 @@ mod tests {
     async fn test_surreal_graph_store_initialization() {
         let store = SurrealGraphStore::open_in_memory();
         assert_eq!(store.schema_version(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_knowledge_store_framework_rules_and_export_import() {
+        let mut store = MemoryGraphStore::new();
+
+        // 1. Initial embedded default check
+        let reg = store.get_framework_registry().await.unwrap();
+        assert!(reg.get_framework(exodus_toolchain::DomainArchetype::BackendService, "rust").contains("Axum"));
+
+        // 2. Dynamic update in session for unthought-of scenario
+        store.save_framework_rule(&exodus_toolchain::FrameworkRule {
+            archetype: exodus_toolchain::DomainArchetype::BackendService,
+            target_language: "rust".to_string(),
+            recommended_framework: "Salvo + SeaORM".to_string(),
+            default_dependencies: vec!["salvo".to_string(), "sea-orm".to_string()],
+            is_user_override: true,
+            notes: Some("Session override for lightweight async web framework".to_string()),
+        }).await.unwrap();
+
+        let updated_reg = store.get_framework_registry().await.unwrap();
+        assert_eq!(
+            updated_reg.get_framework(exodus_toolchain::DomainArchetype::BackendService, "rust"),
+            "Salvo + SeaORM"
+        );
+
+        // 3. Export to temp directory
+        let temp_dir = tempfile::tempdir().unwrap();
+        store.export_all(temp_dir.path()).await.unwrap();
+        assert!(temp_dir.path().join("framework_rules.json").exists());
+
+        // 4. Import into fresh store
+        let mut fresh_store = MemoryGraphStore::new();
+        fresh_store.import_all(temp_dir.path()).await.unwrap();
+        let imported_reg = fresh_store.get_framework_registry().await.unwrap();
+        assert_eq!(
+            imported_reg.get_framework(exodus_toolchain::DomainArchetype::BackendService, "rust"),
+            "Salvo + SeaORM"
+        );
     }
 }

@@ -13,6 +13,26 @@ pub mod unit_gate;
 pub use pipeline::*;
 pub use unit_gate::*;
 
+/// Sanitizes a string into a valid Cargo package name (cannot start with a digit, must only contain alphanumeric, hyphens, and underscores).
+pub fn sanitize_crate_name(name: &str) -> String {
+    let mut sanitized = String::new();
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+            sanitized.push(c);
+        } else {
+            sanitized.push('_');
+        }
+    }
+    if sanitized.is_empty() {
+        return "migrated_pkg".to_string();
+    }
+    if sanitized.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        format!("pkg_{sanitized}")
+    } else {
+        sanitized
+    }
+}
+
 /// Verification report generated after verifying transformed code.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationReport {
@@ -48,10 +68,12 @@ impl Verifier {
         let src_dir = self.target_dir.join("src");
         fs::create_dir_all(&src_dir).map_err(ExodusError::from)?;
 
+        let safe_crate_name = sanitize_crate_name(crate_name);
+
         // 1. Cargo.toml
         let cargo_toml_content = format!(
             r#"[package]
-name = "{crate_name}"
+name = "{safe_crate_name}"
 version = "0.1.0"
 edition = "2021"
 
@@ -72,7 +94,7 @@ tokio = {{ version = "1.0", features = ["full"] }}
         for m in modules {
             let mod_file_name = format!("{}.rs", m.module_name);
             fs::write(src_dir.join(&mod_file_name), &m.rust_source).map_err(ExodusError::from)?;
-            lib_rs_content.push_str(&format!("pub mod {};\n", m.module_name));
+            lib_rs_content.push_str(&format!("pub mod {};\npub use {}::*;\n", m.module_name, m.module_name));
         }
 
         fs::write(src_dir.join("lib.rs"), lib_rs_content).map_err(ExodusError::from)?;

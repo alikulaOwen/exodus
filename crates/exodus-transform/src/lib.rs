@@ -559,7 +559,8 @@ impl TransformationEngine {
         ));
 
         // Common imports
-        rust_source.push_str("use std::collections::{HashMap, HashSet};\n");
+        rust_source.push_str("#[allow(unused_imports)]\nuse std::collections::{HashMap, HashSet};\n");
+        rust_source.push_str("#[allow(unused_imports)]\nuse serde::{Serialize, Deserialize};\n");
         rust_source.push_str("#[allow(unused_imports)]\nuse crate::*;\n\n");
 
         // Transform unsupported constructs into explicit fallback stubs

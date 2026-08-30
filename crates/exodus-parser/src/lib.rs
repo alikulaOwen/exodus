@@ -97,12 +97,149 @@ pub struct ParsedModule {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+/// Detected HTTP/gRPC route endpoint in the codebase.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HttpRouteEvidence {
+    pub method: String,
+    pub path: String,
+    pub handler_name: String,
+    pub file_path: PathBuf,
+}
+
+/// Detected database access or query usage in the codebase.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DatabaseUsageEvidence {
+    pub driver_or_orm: String,
+    pub has_raw_sql: bool,
+    pub queries_detected: Vec<String>,
+    pub file_path: PathBuf,
+}
+
+/// Deep Research Report produced during Stage 1 & 2 analysis.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DeepResearchReport {
+    pub total_modules: usize,
+    pub total_functions: usize,
+    pub total_classes: usize,
+    pub detected_frameworks: Vec<String>,
+    pub detected_routes: Vec<HttpRouteEvidence>,
+    pub detected_databases: Vec<DatabaseUsageEvidence>,
+    pub detected_sdks: Vec<String>,
+    pub inferred_archetype: String,
+}
+
+impl DeepResearchReport {
+    pub fn format_summary(&self) -> String {
+        let mut out = format!(
+            "🔬 Deep Codebase Analysis & Research Findings:\n   • Modules: {} | Functions: {} | Classes: {}\n   • Inferred Archetype: {}\n",
+            self.total_modules, self.total_functions, self.total_classes, self.inferred_archetype
+        );
+        if !self.detected_frameworks.is_empty() {
+            out.push_str(&format!("   • Frameworks: {}\n", self.detected_frameworks.join(", ")));
+        }
+        if !self.detected_routes.is_empty() {
+            out.push_str(&format!("   • HTTP Routes ({} detected):\n", self.detected_routes.len()));
+            for r in self.detected_routes.iter().take(4) {
+                out.push_str(&format!("      - [{}] {} -> `{}`\n", r.method, r.path, r.handler_name));
+            }
+        }
+        if !self.detected_databases.is_empty() {
+            out.push_str(&format!("   • Database Drivers: {}\n", self.detected_databases.iter().map(|d| d.driver_or_orm.as_str()).collect::<Vec<_>>().join(", ")));
+        }
+        if !self.detected_sdks.is_empty() {
+            out.push_str(&format!("   • External Cloud SDKs: {}\n", self.detected_sdks.join(", ")));
+        }
+        out
+    }
+}
+
 /// Complete parsed representation of a repository.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ParsedRepository {
     pub root_path: PathBuf,
     pub modules: Vec<ParsedModule>,
     pub diagnostics: Vec<Diagnostic>,
+}
+
+impl ParsedRepository {
+    /// Perform deep AST, framework, route, and database dependency research.
+    pub fn perform_deep_research(&self) -> DeepResearchReport {
+        let mut total_fns = 0;
+        let mut total_cls = 0;
+        let mut frameworks = Vec::new();
+        let mut routes = Vec::new();
+        let mut dbs = Vec::new();
+        let mut sdks = Vec::new();
+
+        for m in &self.modules {
+            total_fns += m.functions.len();
+            total_cls += m.classes.len();
+
+            // 1. Scan imports for frameworks and cloud SDKs
+            for imp in &m.imports {
+                let mod_name = imp.module.to_lowercase();
+                if mod_name.contains("fastapi") || mod_name.contains("flask") || mod_name.contains("django") || mod_name.contains("axum") || mod_name.contains("express") {
+                    if !frameworks.contains(&imp.module) {
+                        frameworks.push(imp.module.clone());
+                    }
+                }
+                if mod_name.contains("sqlalchemy") || mod_name.contains("sqlite3") || mod_name.contains("psycopg") || mod_name.contains("sqlx") || mod_name.contains("diesel") || mod_name.contains("pymongo") {
+                    let db_name = imp.module.clone();
+                    if !dbs.iter().any(|d: &DatabaseUsageEvidence| d.driver_or_orm == db_name) {
+                        dbs.push(DatabaseUsageEvidence {
+                            driver_or_orm: db_name,
+                            has_raw_sql: false,
+                            queries_detected: Vec::new(),
+                            file_path: m.file_path.clone(),
+                        });
+                    }
+                }
+                if mod_name.contains("boto3") || mod_name.contains("redis") || mod_name.contains("celery") || mod_name.contains("requests") || mod_name.contains("httpx") {
+                    if !sdks.contains(&imp.module) {
+                        sdks.push(imp.module.clone());
+                    }
+                }
+            }
+
+            // 2. Scan function decorators for routes
+            for f in &m.functions {
+                for dec in &f.decorators {
+                    let d_lower = dec.to_lowercase();
+                    if d_lower.contains(".get(") || d_lower.contains(".post(") || d_lower.contains(".put(") || d_lower.contains(".delete(") || d_lower.contains(".route(") {
+                        let method = if d_lower.contains(".get") { "GET" } else if d_lower.contains(".post") { "POST" } else if d_lower.contains(".put") { "PUT" } else if d_lower.contains(".delete") { "DELETE" } else { "HTTP" };
+                        let path = dec.split('(').nth(1).and_then(|s| s.split(')').next()).unwrap_or("/").trim_matches('\"').trim_matches('\'').to_string();
+                        routes.push(HttpRouteEvidence {
+                            method: method.to_string(),
+                            path,
+                            handler_name: f.name.clone(),
+                            file_path: m.file_path.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        let inferred_archetype = if !routes.is_empty() || frameworks.iter().any(|f| f.to_lowercase().contains("fastapi") || f.to_lowercase().contains("flask")) {
+            "BackendService".to_string()
+        } else if sdks.iter().any(|s| s.to_lowercase().contains("celery")) {
+            "WorkerQueue".to_string()
+        } else if total_cls == 0 && total_fns > 0 {
+            "SharedLibrary".to_string()
+        } else {
+            "SharedLibrary".to_string()
+        };
+
+        DeepResearchReport {
+            total_modules: self.modules.len(),
+            total_functions: total_fns,
+            total_classes: total_cls,
+            detected_frameworks: frameworks,
+            detected_routes: routes,
+            detected_databases: dbs,
+            detected_sdks: sdks,
+            inferred_archetype,
+        }
+    }
 }
 
 /// Interface for source language parsers.

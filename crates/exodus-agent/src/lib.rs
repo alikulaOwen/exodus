@@ -7,6 +7,12 @@ use exodus_fallback::FallbackGenerator;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub mod policy_guard;
+pub use policy_guard::*;
+
+pub mod squad;
+pub use squad::*;
+
 /// Bounded configuration for agent interactions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentBounds {
@@ -148,7 +154,10 @@ impl OpenAiCompatibleProvider {
             api_key: api_key.into(),
             base_url: base_url.into().trim_end_matches('/').to_string(),
             model: model.into(),
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .unwrap_or_default(),
         }
     }
 
@@ -178,7 +187,8 @@ impl AgentProvider for OpenAiCompatibleProvider {
     }
 
     async fn complete(&self, system_prompt: &str, user_prompt: &str) -> Result<AgentResponse> {
-        let url = format!("{}/chat/completions", self.base_url);
+        let clean_base = self.base_url.trim_end_matches('/');
+        let url = format!("{clean_base}/chat/completions");
         let start = std::time::Instant::now();
 
         let request_body = serde_json::json!({
@@ -236,18 +246,29 @@ impl AgentProvider for OpenAiCompatibleProvider {
 }
 
 fn extract_code_snippet(text: &str) -> Option<String> {
-    if let Some(start) = text.find("```") {
-        let after_start = &text[start + 3..];
-        let code_start = if let Some(newline) = after_start.find('\n') {
-            &after_start[newline + 1..]
+    let trimmed = text.trim();
+    if trimmed.starts_with("```") {
+        let after_fence = &trimmed[3..];
+        let code_start = if let Some(newline) = after_fence.find('\n') {
+            &after_fence[newline + 1..]
         } else {
-            after_start
+            after_fence
         };
-        if let Some(end) = code_start.find("```") {
-            return Some(code_start[..end].trim().to_string());
+        if let Some(last_fence) = code_start.rfind("```") {
+            return Some(code_start[..last_fence].trim().to_string());
+        }
+    } else if let Some(first_fence) = trimmed.find("```") {
+        let after_fence = &trimmed[first_fence + 3..];
+        let code_start = if let Some(newline) = after_fence.find('\n') {
+            &after_fence[newline + 1..]
+        } else {
+            after_fence
+        };
+        if let Some(last_fence) = code_start.rfind("```") {
+            return Some(code_start[..last_fence].trim().to_string());
         }
     }
-    Some(text.trim().to_string())
+    Some(trimmed.to_string())
 }
 
 /// Provider profile model stored outside repository in user configuration.
@@ -435,6 +456,28 @@ pub struct DiscoveredAgent {
     pub is_active: bool,
 }
 
+impl DiscoveredAgent {
+    /// Builds a live agent provider instance using the discovered credentials.
+    pub fn build_provider(&self) -> Option<std::sync::Arc<dyn AgentProvider>> {
+        let key = std::env::var(&self.profile.secret_ref)
+            .or_else(|_| std::env::var("GEMINI_API_KEY"))
+            .or_else(|_| std::env::var("ANTIGRAVITY_API_KEY"))
+            .or_else(|_| std::env::var("AGY_API_KEY"))
+            .or_else(|_| std::env::var("OPENAI_API_KEY"))
+            .or_else(|_| std::env::var("ANTHROPIC_API_KEY"))
+            .or_else(|_| std::env::var("EXODUS_LLM_API_KEY"))
+            .ok()?;
+
+        let base_url = self
+            .profile
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+        let provider = OpenAiCompatibleProvider::new(key, base_url, &self.profile.model);
+        Some(std::sync::Arc::new(provider))
+    }
+}
+
 /// Result of probing environment, tools, and local ports for active AI agents.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AgentDiscoveryResult {
@@ -446,6 +489,173 @@ pub enum AgentDiscoveryResult {
     },
 }
 
+impl AgentDiscoveryResult {
+    /// Constructs an active provider if an agent was detected and credentials exist.
+    pub fn build_provider(&self) -> Option<std::sync::Arc<dyn AgentProvider>> {
+        match self {
+            AgentDiscoveryResult::Found(agent) => agent.build_provider(),
+            AgentDiscoveryResult::NoneDetected { .. } => None,
+        }
+    }
+}
+
+/// Result of transforming a single file using the LLM Migration Engine.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmModuleMigrationResult {
+    pub module_name: String,
+    pub relative_path: std::path::PathBuf,
+    pub source_language: String,
+    pub target_language: String,
+    pub target_source: String,
+    pub target_tests: Option<String>,
+    pub tokens_prompt: usize,
+    pub tokens_completion: usize,
+    pub duration_ms: u64,
+}
+
+/// Workspace and domain context for a package being migrated.
+#[derive(Debug, Clone, Default)]
+pub struct PackageDomainContext {
+    pub package_name: Option<String>,
+    pub domain_archetype: Option<exodus_toolchain::DomainArchetype>,
+    pub recommended_framework: Option<String>,
+    pub sibling_dependencies: Vec<String>,
+}
+
+/// Autonomous Polyglot LLM Migration Engine that converts legacy source files
+/// from ANY language to ANY other target language (e.g., Python <-> Rust, Java <-> Go, TS <-> Python).
+pub struct LlmMigrationEngine {
+    provider: std::sync::Arc<dyn AgentProvider>,
+}
+
+impl LlmMigrationEngine {
+    pub fn new(provider: std::sync::Arc<dyn AgentProvider>) -> Self {
+        Self { provider }
+    }
+
+    /// Translates a single source module from `source_language` to `target_language`
+    /// including synthesized unit test contracts for output verification.
+    pub async fn migrate_module(
+        &self,
+        module_name: &str,
+        relative_path: &std::path::Path,
+        source_code: &str,
+        source_language: &str,
+        target_language: &str,
+        prompt_directive: Option<&str>,
+    ) -> Result<LlmModuleMigrationResult> {
+        self.migrate_package_module(
+            module_name,
+            relative_path,
+            source_code,
+            source_language,
+            target_language,
+            None,
+            prompt_directive,
+        )
+        .await
+    }
+
+    /// Translates a single source module with domain archetype and workspace package context.
+    pub async fn migrate_package_module(
+        &self,
+        module_name: &str,
+        relative_path: &std::path::Path,
+        source_code: &str,
+        source_language: &str,
+        target_language: &str,
+        domain_context: Option<&PackageDomainContext>,
+        prompt_directive: Option<&str>,
+    ) -> Result<LlmModuleMigrationResult> {
+        let target_lang_lower = target_language.to_lowercase();
+        let target_code_block = match target_lang_lower.as_str() {
+            "rust" | "rs" => "rust",
+            "typescript" | "ts" => "typescript",
+            "javascript" | "js" => "javascript",
+            "python" | "py" => "python",
+            "go" | "golang" => "go",
+            "java" => "java",
+            "kotlin" | "kt" => "kotlin",
+            "cpp" | "c++" => "cpp",
+            "csharp" | "c#" | "cs" => "csharp",
+            "ruby" | "rb" => "ruby",
+            "swift" => "swift",
+            _ => "text",
+        };
+
+        let mut domain_instructions = String::new();
+        if let Some(ctx) = domain_context {
+            if let Some(archetype) = ctx.domain_archetype {
+                let fw = ctx
+                    .recommended_framework
+                    .clone()
+                    .unwrap_or_else(|| archetype.recommended_framework(target_language));
+                domain_instructions = format!(
+                    "\nDomain Archetype: {}\nTarget Domain Framework: {}\nGuideline: Structure this package following idiomatic conventions for {} using {}.\n",
+                    archetype.display_name(),
+                    fw,
+                    archetype.display_name(),
+                    fw
+                );
+            }
+            if !ctx.sibling_dependencies.is_empty() {
+                domain_instructions.push_str(&format!(
+                    "Workspace Sibling Dependencies: {}\n",
+                    ctx.sibling_dependencies.join(", ")
+                ));
+            }
+        }
+
+        let sys_prompt = format!(
+            r#"You are Project Exodus's Autonomous Polyglot Code Migration & Modernization Engine.
+Your task is to transform legacy source code written in {source_language} into clean, idiomatic, fully working, and production-ready {target_language} code.
+{}
+Core Invariants & Requirements:
+1. Output valid, complete, and compilable/interpretable {target_language} code.
+2. Enclose the main {target_language} implementation in a single ```{target_code_block} ... ``` block.
+3. Fully implement all functions, classes, structs, methods, data models, error handling, types, and logic.
+4. Translate idiomatic patterns of {source_language} into idiomatic standards and best practices of {target_language}.
+   - In Rust: Use standard formatting macros (e.g. `format!("{{:.2}}", val)` without invalid format letters like `f`), `#[derive(Debug, Clone, Serialize, Deserialize)]` for data models, and `#[cfg(test)] mod tests {{ ... }}` for unit tests.
+   - In TypeScript: Use strict types, `interface` / `class`, and `node:test` or `jest` for unit tests.
+   - In Go: Use explicit error handling `(T, error)`, exported capitalization, and `_test.go` or inline unit tests.
+   - In Python: Use type annotations, `dataclasses` or `pydantic`, and `unittest` or `pytest`.
+5. Include comprehensive companion unit tests testing edge cases and expected behavior.
+6. Do NOT emit placeholders, `todo` stubs, or truncated comments. Write complete, functional code."#,
+            domain_instructions
+        );
+
+        let directive_block = if let Some(d) = prompt_directive {
+            format!("\nUser Migration Directive: \"{}\"\n", d.trim())
+        } else {
+            String::new()
+        };
+
+        let user_prompt = format!(
+            "Module Name: `{module_name}`\nFile Path: `{}`\nSource Language: {source_language}\nTarget Language: {target_language}\n{}Source Code to Migrate:\n```{source_language}\n{}\n```\n\nPlease translate this entire module into idiomatic {target_language} with companion unit tests.",
+            relative_path.display(),
+            directive_block,
+            source_code
+        );
+
+        let resp = self.provider.complete(&sys_prompt, &user_prompt).await?;
+        let target_code = resp
+            .proposed_code
+            .unwrap_or_else(|| extract_code_snippet(&resp.raw_content).unwrap_or(resp.raw_content));
+
+        Ok(LlmModuleMigrationResult {
+            module_name: module_name.to_string(),
+            relative_path: relative_path.to_path_buf(),
+            source_language: source_language.to_string(),
+            target_language: target_language.to_string(),
+            target_source: target_code,
+            target_tests: None,
+            tokens_prompt: resp.tokens_prompt,
+            tokens_completion: resp.tokens_completion,
+            duration_ms: resp.duration_ms,
+        })
+    }
+}
+
 /// Cascading AI agent discovery engine.
 pub struct AgentDiscovery;
 
@@ -453,19 +663,28 @@ impl AgentDiscovery {
     /// Auto-detects existing agents and keys across Antigravity, Claude Code, Codex, and local runtimes.
     pub fn auto_detect() -> AgentDiscoveryResult {
         // 1. Antigravity / Gemini
-        if let Ok(k) = std::env::var("ANTIGRAVITY_API_KEY")
-            .or_else(|_| std::env::var("AGY_API_KEY"))
-            .or_else(|_| std::env::var("GEMINI_API_KEY"))
+        if let Some((k, var_name)) = [
+            "ANTIGRAVITY_API_KEY",
+            "AGY_API_KEY",
+            "GEMINI_API_KEY",
+        ]
+        .iter()
+        .find_map(|&name| std::env::var(name).ok().map(|val| (val, name)))
         {
             if !k.trim().is_empty() {
+                let model = std::env::var("GEMINI_MODEL")
+                    .or_else(|_| std::env::var("ANTIGRAVITY_MODEL"))
+                    .unwrap_or_else(|_| "gemini-3.6-flash".to_string());
                 return AgentDiscoveryResult::Found(DiscoveredAgent {
-                    source: AgentDiscoverySource::Antigravity("ANTIGRAVITY_API_KEY".to_string()),
+                    source: AgentDiscoverySource::Antigravity(var_name.to_string()),
                     profile: ProviderProfile {
                         name: "antigravity-auto".to_string(),
                         provider_kind: "openai".to_string(),
-                        model: "gemini-2.5-pro".to_string(),
-                        base_url: Some("https://generativelanguage.googleapis.com/v1beta/openai".to_string()),
-                        secret_ref: "ANTIGRAVITY_API_KEY".to_string(),
+                        model,
+                        base_url: Some(
+                            "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
+                        ),
+                        secret_ref: var_name.to_string(),
                         cost_limit_usd: Some(15.0),
                         timeout_seconds: 45,
                     },
@@ -724,6 +943,11 @@ mod tests {
 
     #[test]
     fn test_agent_discovery_env_precedence() {
+        let prev_gemini = std::env::var("GEMINI_API_KEY").ok();
+        std::env::remove_var("GEMINI_API_KEY");
+        let prev_agy = std::env::var("AGY_API_KEY").ok();
+        std::env::remove_var("AGY_API_KEY");
+
         // Test Antigravity detection
         std::env::set_var("ANTIGRAVITY_API_KEY", "test-agy-key");
         let result = AgentDiscovery::auto_detect();
@@ -735,6 +959,13 @@ mod tests {
             _ => panic!("Expected Antigravity to be detected"),
         }
         std::env::remove_var("ANTIGRAVITY_API_KEY");
+
+        if let Some(val) = prev_gemini {
+            std::env::set_var("GEMINI_API_KEY", val);
+        }
+        if let Some(val) = prev_agy {
+            std::env::set_var("AGY_API_KEY", val);
+        }
     }
 }
 

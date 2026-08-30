@@ -8,13 +8,14 @@ dist/
 .env.*
 !.env.example
 
-# Runtime execution state (preserve schemas & contracts, ignore run traces)
-.exodus/runs/
-.exodus/cache/
-.exodus/contracts/
-.exodus/knowledge/cases/
-.exodus/data/
-.exodus/*.json
+# Runtime execution state, knowledge cases, contracts & evaluation exports (handled by embedded DB)
+.exodus/
+!.exodus/schemas/
+
+# Demo and generated migration fixtures
+demo_projects/
+crates/*_migrated_*/
+*_migrated_*/
 
 # OS and Editor files
 .DS_Store
@@ -22,3 +23,5 @@ Thumbs.db
 *.swp
 *.swo
 *~
+*.tar.gz
+*.zip

@@ -233,7 +233,13 @@ impl Evaluator {
             let mut dirs: Vec<PathBuf> = entries
                 .flatten()
                 .map(|e| e.path())
-                .filter(|p| p.is_dir())
+                .filter(|p| {
+                    if !p.is_dir() {
+                        return false;
+                    }
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    !name.starts_with('.') && !name.contains("_migrated_") && !name.ends_with("_migrated")
+                })
                 .collect();
             dirs.sort();
 
@@ -266,7 +272,13 @@ impl Evaluator {
                 entries
                     .flatten()
                     .map(|e| e.path())
-                    .filter(|p| p.is_dir())
+                    .filter(|p| {
+                        if !p.is_dir() {
+                            return false;
+                        }
+                        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        !name.starts_with('.') && !name.contains("_migrated_") && !name.ends_with("_migrated")
+                    })
                     .collect()
             })
             .unwrap_or_default();
