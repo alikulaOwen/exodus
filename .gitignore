@@ -14,6 +14,7 @@ dist/
 .exodus/contracts/
 .exodus/knowledge/cases/
 .exodus/data/
+.exodus/*.json
 
 # OS and Editor files
 .DS_Store

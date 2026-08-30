@@ -35,3 +35,4 @@ tracing-subscriber.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 uuid.workspace = true
+rustyline = "15.0"
