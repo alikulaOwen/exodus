@@ -315,9 +315,178 @@ def ground_08_async_function():
     print(f"wrote {d/'contracts.json'} ({len(contracts)} contracts)")
 
 
+def ground_05_unsupported_decorator():
+    d = REPO_ROOT / "fixtures" / "05_unsupported_decorator"
+    sys.path.insert(0, str(d))
+    service = importlib.import_module("cached_service")
+    importlib.reload(service)
+    sys.path.pop(0)
+
+    result = service.compute_heavy_metric(5, 3)
+    evidence = "differential_execution: python3 scripts/ground_fixture_contracts.py (fixtures/05_unsupported_decorator/cached_service.py)"
+
+    contracts = [
+        contract(
+            "function::cached_service::compute_heavy_metric", "compute_heavy_metric", "function",
+            "compute_heavy_metric(base: int, multiplier: int) -> int",
+            "compute_heavy_metric(base: i64, multiplier: i64) -> i64",
+            [
+                assertion(
+                    "basic_metric",
+                    "compute_heavy_metric(5, 3)",
+                    str(result),
+                    "differential_execution", evidence,
+                ),
+            ],
+        ),
+    ]
+    (d / "contracts.json").write_text(json.dumps(contracts, indent=2) + "\n")
+    print(f"wrote {d/'contracts.json'} ({len(contracts)} contracts)")
+
+
+def ground_06_dynamic_value():
+    d = REPO_ROOT / "fixtures" / "06_dynamic_value"
+    sys.path.insert(0, str(d))
+    parser = importlib.import_module("payload_parser")
+    importlib.reload(parser)
+    sys.path.pop(0)
+
+    res_ok = parser.process_dynamic_payload({"status": "ok"})
+    res_err = parser.process_dynamic_payload({})
+    evidence = "differential_execution: python3 scripts/ground_fixture_contracts.py (fixtures/06_dynamic_value/payload_parser.py)"
+
+    contracts = [
+        contract(
+            "function::payload_parser::process_dynamic_payload", "process_dynamic_payload", "function",
+            "process_dynamic_payload(payload: dict) -> int",
+            "process_dynamic_payload(payload: &std::collections::HashMap<String, String>) -> i64",
+            [
+                assertion(
+                    "status_present",
+                    'process_dynamic_payload(&[("status".to_string(), "ok".to_string())].into_iter().collect())',
+                    str(res_ok),
+                    "differential_execution", evidence,
+                ),
+                assertion(
+                    "status_absent",
+                    "process_dynamic_payload(&std::collections::HashMap::new())",
+                    str(res_err),
+                    "differential_execution", evidence,
+                ),
+            ],
+        ),
+    ]
+    (d / "contracts.json").write_text(json.dumps(contracts, indent=2) + "\n")
+    print(f"wrote {d/'contracts.json'} ({len(contracts)} contracts)")
+
+
+def ground_07_missing_sdk():
+    d = REPO_ROOT / "fixtures" / "07_missing_sdk"
+    sys.path.insert(0, str(d))
+    stub_sdk = types.ModuleType("stripe_legacy_sdk")
+    class StubCharge:
+        @staticmethod
+        def create(amount, token):
+            return StubCharge()
+        def is_successful(self):
+            return True
+    stub_sdk.Charge = StubCharge
+    sys.modules["stripe_legacy_sdk"] = stub_sdk
+
+    payment = importlib.import_module("external_payment")
+    importlib.reload(payment)
+    del sys.modules["stripe_legacy_sdk"]
+    sys.path.pop(0)
+
+    evidence = "differential_execution (with stubbed Stripe SDK): python3 scripts/ground_fixture_contracts.py (fixtures/07_missing_sdk/external_payment.py)"
+
+    contracts = [
+        contract(
+            "function::external_payment::charge_card", "charge_card", "function",
+            "charge_card(card_token: str, amount_cents: int) -> bool",
+            "charge_card(card_token: String, amount_cents: i64) -> bool",
+            [
+                assertion(
+                    "basic_charge",
+                    'charge_card("tok_test123".to_string(), 1000)',
+                    "true",
+                    "differential_execution", evidence,
+                ),
+            ],
+        ),
+    ]
+    (d / "contracts.json").write_text(json.dumps(contracts, indent=2) + "\n")
+    print(f"wrote {d/'contracts.json'} ({len(contracts)} contracts)")
+
+
+def ground_09_database_compat_wrapper():
+    d = REPO_ROOT / "fixtures" / "09_database_compat_wrapper"
+    sys.path.insert(0, str(d))
+    repo_mod = importlib.import_module("repository")
+    importlib.reload(repo_mod)
+    sys.path.pop(0)
+
+    repo = repo_mod.UserRepository("sqlite://test.db")
+    user_str = repo.find_user_by_id(42)
+    evidence = "differential_execution: python3 scripts/ground_fixture_contracts.py (fixtures/09_database_compat_wrapper/repository.py)"
+
+    contracts = [
+        contract(
+            "class::repository::UserRepository", "UserRepository", "class",
+            "class UserRepository",
+            "struct UserRepository",
+            [
+                assertion(
+                    "find_user",
+                    'UserRepository::new("sqlite://test.db".to_string()).find_user_by_id(42)',
+                    rust_str_debug(user_str),
+                    "differential_execution", evidence,
+                ),
+            ],
+        ),
+    ]
+    (d / "contracts.json").write_text(json.dumps(contracts, indent=2) + "\n")
+    print(f"wrote {d/'contracts.json'} ({len(contracts)} contracts)")
+
+
+def ground_10_deliberately_untranslatable_reflection():
+    d = REPO_ROOT / "fixtures" / "10_deliberately_untranslatable_reflection"
+    sys.path.insert(0, str(d))
+    runtime = importlib.import_module("dynamic_runtime")
+    importlib.reload(runtime)
+    sys.path.pop(0)
+
+    val = runtime.evaluate_runtime_code("2 + 2")
+    evidence = "differential_execution: python3 scripts/ground_fixture_contracts.py (fixtures/10_deliberately_untranslatable_reflection/dynamic_runtime.py)"
+
+    contracts = [
+        contract(
+            "function::dynamic_runtime::evaluate_runtime_code", "evaluate_runtime_code", "function",
+            "evaluate_runtime_code(expr_str: str) -> int",
+            "evaluate_runtime_code(expr_str: String) -> i64",
+            [
+                assertion(
+                    "eval_addition",
+                    'evaluate_runtime_code("2 + 2".to_string())',
+                    str(val),
+                    "differential_execution", evidence,
+                ),
+            ],
+        ),
+    ]
+    (d / "contracts.json").write_text(json.dumps(contracts, indent=2) + "\n")
+    print(f"wrote {d/'contracts.json'} ({len(contracts)} contracts)")
+
+
 if __name__ == "__main__":
     ground_01_typed_functions()
     ground_02_class_conversion()
     ground_03_module_dependency()
     ground_04_circular_dependency()
+    ground_05_unsupported_decorator()
+    ground_06_dynamic_value()
+    ground_07_missing_sdk()
     ground_08_async_function()
+    ground_09_database_compat_wrapper()
+    ground_10_deliberately_untranslatable_reflection()
+

@@ -72,16 +72,26 @@ impl ExodusPlugin for DomainArchetypePlugin {
         } = event
         {
             let framework = match (target_language.as_str(), domain_archetype) {
-                ("rust", exodus_toolchain::DomainArchetype::BackendService) => "Axum + Tokio + Tower",
-                ("rust", exodus_toolchain::DomainArchetype::WorkerQueue) => "Tokio Tasks + Lapin / RDKafka",
+                ("rust", exodus_toolchain::DomainArchetype::BackendService) => {
+                    "Axum + Tokio + Tower"
+                }
+                ("rust", exodus_toolchain::DomainArchetype::WorkerQueue) => {
+                    "Tokio Tasks + Lapin / RDKafka"
+                }
                 ("rust", exodus_toolchain::DomainArchetype::CliTool) => "Clap + Indicatif",
                 ("rust", _) => "Serde + Thiserror + Anyhow",
-                ("go", exodus_toolchain::DomainArchetype::BackendService) => "Gin / Fiber + Net/HTTP",
+                ("go", exodus_toolchain::DomainArchetype::BackendService) => {
+                    "Gin / Fiber + Net/HTTP"
+                }
                 ("go", exodus_toolchain::DomainArchetype::WorkerQueue) => "Goroutines + Channels",
                 ("go", exodus_toolchain::DomainArchetype::CliTool) => "Cobra + Viper",
                 ("go", _) => "Standard Library Structs",
-                ("typescript", exodus_toolchain::DomainArchetype::BackendService) => "Express / Fastify + Node:Test",
-                ("typescript", exodus_toolchain::DomainArchetype::WorkerQueue) => "BullMQ / Worker Threads",
+                ("typescript", exodus_toolchain::DomainArchetype::BackendService) => {
+                    "Express / Fastify + Node:Test"
+                }
+                ("typescript", exodus_toolchain::DomainArchetype::WorkerQueue) => {
+                    "BullMQ / Worker Threads"
+                }
                 ("typescript", exodus_toolchain::DomainArchetype::CliTool) => "Commander.js",
                 ("typescript", _) => "Strict TypeScript Interfaces",
                 _ => "Standard Idiomatic Architecture",
@@ -325,10 +335,18 @@ mod tests {
 
         let plugins = kernel.list_plugins();
         assert_eq!(plugins.len(), 7);
-        assert!(plugins.iter().any(|(id, _, _)| *id == "builtin:tree-sitter-parser"));
-        assert!(plugins.iter().any(|(id, _, _)| *id == "builtin:sdlc-modernization"));
-        assert!(plugins.iter().any(|(id, _, _)| *id == "builtin:domain-archetype"));
-        assert!(plugins.iter().any(|(id, _, _)| *id == "builtin:code-mode-agent-policy"));
+        assert!(plugins
+            .iter()
+            .any(|(id, _, _)| *id == "builtin:tree-sitter-parser"));
+        assert!(plugins
+            .iter()
+            .any(|(id, _, _)| *id == "builtin:sdlc-modernization"));
+        assert!(plugins
+            .iter()
+            .any(|(id, _, _)| *id == "builtin:domain-archetype"));
+        assert!(plugins
+            .iter()
+            .any(|(id, _, _)| *id == "builtin:code-mode-agent-policy"));
     }
 
     #[tokio::test]
@@ -339,7 +357,10 @@ mod tests {
             "rust".to_string(),
         );
         let mut kernel = crate::ExodusKernel::new(ctx);
-        kernel.mount(Box::new(SdlcModernizationPlugin)).await.unwrap();
+        kernel
+            .mount(Box::new(SdlcModernizationPlugin))
+            .await
+            .unwrap();
 
         let event = KernelEvent::PackageTargetScheduled {
             package_name: "payment-service".to_string(),
@@ -352,6 +373,9 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0]["plugin"], "builtin:sdlc-modernization");
         assert!(results[0]["health_score"].as_u64().unwrap() <= 70);
-        assert!(results[0]["architecture_thesis"]["hypothesis"].as_str().unwrap().contains("eliminates thread pool starvation"));
+        assert!(results[0]["architecture_thesis"]["hypothesis"]
+            .as_str()
+            .unwrap()
+            .contains("eliminates thread pool starvation"));
     }
 }

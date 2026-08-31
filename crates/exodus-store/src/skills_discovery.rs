@@ -3,10 +3,10 @@
 //! Scans directories (such as `.agents/skills/**/SKILL.md`) and parses YAML frontmatter
 //! and markdown guidelines into `RepoSetupSkillRecord`s for planner and agent consultation.
 
+use crate::{RepoSetupSkillRecord, SkillCategory};
 use chrono::Utc;
 use exodus_core::Result;
 use exodus_toolchain::DomainArchetype;
-use crate::{RepoSetupSkillRecord, SkillCategory};
 use std::fs;
 use std::path::Path;
 
@@ -51,7 +51,10 @@ impl SkillDiscoverer {
     }
 
     /// Parses the raw string contents of a `SKILL.md` file.
-    pub fn parse_skill_content(content: &str, file_path: &Path) -> Result<Option<RepoSetupSkillRecord>> {
+    pub fn parse_skill_content(
+        content: &str,
+        file_path: &Path,
+    ) -> Result<Option<RepoSetupSkillRecord>> {
         let trimmed = content.trim();
         if !trimmed.starts_with("---") {
             // Markdown file without frontmatter - synthesize basic skill
@@ -62,7 +65,7 @@ impl SkillDiscoverer {
                 .unwrap_or("unnamed_skill");
             return Ok(Some(RepoSetupSkillRecord {
                 id: format!("skill_{name}"),
-                name: name.replace('_', " ").replace('-', " "),
+                name: name.replace(['_', '-'], " "),
                 category: SkillCategory::Documentation,
                 target_language: "any".to_string(),
                 target_archetype: DomainArchetype::Unknown,
@@ -101,11 +104,19 @@ impl SkillDiscoverer {
                     "language" | "target_language" => target_lang = val,
                     "archetype" | "target_archetype" => {
                         target_arch = match val.to_lowercase().as_str() {
-                            "backendservice" | "backend_service" | "backend" => DomainArchetype::BackendService,
-                            "sharedlibrary" | "shared_library" | "library" | "lib" => DomainArchetype::SharedLibrary,
+                            "backendservice" | "backend_service" | "backend" => {
+                                DomainArchetype::BackendService
+                            }
+                            "sharedlibrary" | "shared_library" | "library" | "lib" => {
+                                DomainArchetype::SharedLibrary
+                            }
                             "clitool" | "cli_tool" | "cli" => DomainArchetype::CliTool,
-                            "frontendapp" | "frontend_app" | "frontend" => DomainArchetype::FrontendApp,
-                            "workerqueue" | "worker_queue" | "worker" => DomainArchetype::WorkerQueue,
+                            "frontendapp" | "frontend_app" | "frontend" => {
+                                DomainArchetype::FrontendApp
+                            }
+                            "workerqueue" | "worker_queue" | "worker" => {
+                                DomainArchetype::WorkerQueue
+                            }
                             _ => DomainArchetype::Unknown,
                         };
                     }
@@ -124,8 +135,7 @@ impl SkillDiscoverer {
                     .unwrap_or("unknown")
             })
             .to_lowercase()
-            .replace(' ', "_")
-            .replace('-', "_");
+            .replace([' ', '-'], "_");
 
         let skill_name = name.unwrap_or_else(|| skill_id.clone());
         let skill_desc = description.unwrap_or_else(|| format!("Setup blueprint for {skill_name}"));
@@ -140,9 +150,15 @@ impl SkillDiscoverer {
             _ => {
                 if skill_id.contains("wiki") || skill_id.contains("doc") {
                     SkillCategory::Documentation
-                } else if skill_id.contains("ci") || skill_id.contains("docker") || skill_id.contains("container") {
+                } else if skill_id.contains("ci")
+                    || skill_id.contains("docker")
+                    || skill_id.contains("container")
+                {
                     SkillCategory::DevOps
-                } else if skill_id.contains("trace") || skill_id.contains("telemetry") || skill_id.contains("health") {
+                } else if skill_id.contains("trace")
+                    || skill_id.contains("telemetry")
+                    || skill_id.contains("health")
+                {
                     SkillCategory::Observability
                 } else {
                     SkillCategory::Toolchain
@@ -153,7 +169,11 @@ impl SkillDiscoverer {
         // Scan guidelines for scaffold files mentioned in backticks or markdown headers
         let mut scaffold_files = Vec::new();
         for word in body.split_whitespace() {
-            let clean = word.trim_matches('`').trim_matches('"').trim_matches('\'').trim_matches(',');
+            let clean = word
+                .trim_matches('`')
+                .trim_matches('"')
+                .trim_matches('\'')
+                .trim_matches(',');
             if (clean.contains('.') || clean.contains('/'))
                 && (clean.ends_with(".toml")
                     || clean.ends_with(".json")

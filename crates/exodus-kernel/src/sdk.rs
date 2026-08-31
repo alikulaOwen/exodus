@@ -52,11 +52,18 @@ impl ExodusSDK {
     }
 
     /// Reads a file from the source workspace root.
-    pub async fn read_source_file(&self, rel_path: impl AsRef<Path>) -> Result<String, KernelError> {
+    pub async fn read_source_file(
+        &self,
+        rel_path: impl AsRef<Path>,
+    ) -> Result<String, KernelError> {
         let full_path = self.ctx.workspace_root.join(rel_path.as_ref());
-        fs::read_to_string(&full_path)
-            .await
-            .map_err(|e| KernelError::SdkError(format!("Failed to read source file '{}': {}", full_path.display(), e)))
+        fs::read_to_string(&full_path).await.map_err(|e| {
+            KernelError::SdkError(format!(
+                "Failed to read source file '{}': {}",
+                full_path.display(),
+                e
+            ))
+        })
     }
 
     /// Atomically writes a file into the target directory.
@@ -68,11 +75,19 @@ impl ExodusSDK {
         let full_path = self.target_root.join(rel_path.as_ref());
         if let Some(parent) = full_path.parent() {
             fs::create_dir_all(parent).await.map_err(|e| {
-                KernelError::SdkError(format!("Failed to create parent dir '{}': {}", parent.display(), e))
+                KernelError::SdkError(format!(
+                    "Failed to create parent dir '{}': {}",
+                    parent.display(),
+                    e
+                ))
             })?;
         }
         fs::write(&full_path, content).await.map_err(|e| {
-            KernelError::SdkError(format!("Failed to write file '{}': {}", full_path.display(), e))
+            KernelError::SdkError(format!(
+                "Failed to write file '{}': {}",
+                full_path.display(),
+                e
+            ))
         })?;
         Ok(full_path)
     }
@@ -112,7 +127,9 @@ impl ExodusSDK {
                     .current_dir(&target_dir)
                     .output()
                     .await
-                    .map_err(|e| KernelError::SdkError(format!("cargo check failed to spawn: {}", e)))?;
+                    .map_err(|e| {
+                        KernelError::SdkError(format!("cargo check failed to spawn: {}", e))
+                    })?;
 
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -133,7 +150,9 @@ impl ExodusSDK {
                     .current_dir(&target_dir)
                     .output()
                     .await
-                    .map_err(|e| KernelError::SdkError(format!("go build failed to spawn: {}", e)))?;
+                    .map_err(|e| {
+                        KernelError::SdkError(format!("go build failed to spawn: {}", e))
+                    })?;
 
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -172,7 +191,8 @@ impl ExodusSDK {
                     }
                     Err(_) => Ok(SdkVerificationResult {
                         success: true, // fallback if npx not installed locally
-                        compiler_output: "TypeScript check bypassed (compiler runtime optional)".to_string(),
+                        compiler_output: "TypeScript check bypassed (compiler runtime optional)"
+                            .to_string(),
                         test_output: None,
                         passed_tests: 0,
                         failed_tests: 0,
@@ -201,7 +221,9 @@ impl ExodusSDK {
                     .current_dir(&target_dir)
                     .output()
                     .await
-                    .map_err(|e| KernelError::SdkError(format!("cargo test failed to spawn: {}", e)))?;
+                    .map_err(|e| {
+                        KernelError::SdkError(format!("cargo test failed to spawn: {}", e))
+                    })?;
 
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -245,7 +267,9 @@ impl ExodusSDK {
                     .current_dir(&target_dir)
                     .output()
                     .await
-                    .map_err(|e| KernelError::SdkError(format!("go test failed to spawn: {}", e)))?;
+                    .map_err(|e| {
+                        KernelError::SdkError(format!("go test failed to spawn: {}", e))
+                    })?;
 
                 let combined = format!(
                     "{}\n{}",
@@ -336,7 +360,10 @@ mod tests {
 
         let mut files = HashMap::new();
         files.insert("src/lib.rs".to_string(), "pub fn hello() {}".to_string());
-        files.insert("Cargo.toml".to_string(), "[package]\nname = \"foo\"".to_string());
+        files.insert(
+            "Cargo.toml".to_string(),
+            "[package]\nname = \"foo\"".to_string(),
+        );
 
         let written = sdk.batch_write_files(&files).await.unwrap();
         assert_eq!(written.len(), 2);

@@ -17,8 +17,12 @@ arguments (not `--path`-style flags) unless noted.
 
 ## Repository-level pipeline
 
+* `exodus sense [source] [-o|--output <dir>]` — runs the repository-wide Sense phase across polyglot source code, Bash/Python automation, Dockerfiles, Compose specs, CI workflows, Terraform modules, documentation, and damaged fragments, emitting `intent_graph.json` and persisting claims in embedded SurrealDB.
+* `exodus intent show [source]` — inspects reconstructed migration intent claims, category breakdowns, and evidence traces.
+* `exodus intent conflicts [source]` — identifies contradictory or provisional intent claims requiring resolution.
+* `exodus intent review [source] / exodus review [source]` — launches the agent-led sequential terminal review panel with redacted evidence cards, alternative choices, and immediate SurrealDB persistence.
 * `exodus analyze [source] [-o|--output <dir>]` — parses the repository and writes `graph.json`/`architecture.json`.
-* `exodus plan [source] [-o|--output <dir>]` — generates `plan.json` (waves, risk, approval requirements).
+* `exodus plan [source] [-o|--output <dir>]` — generates `plan.json` incorporating the `MigrationIntentContract`, `TargetPathPlan`, and `ConcurrencyMappingPlan`.
 * `exodus approve [plan] [-a|--approver <name>]` — marks a plan approved.
 * `exodus migrate [source] [-o|--output <dir>] [--force] [--gated]` — transforms and scaffolds a
   target crate. `--gated` routes through the real per-unit verification gate instead (dependency-

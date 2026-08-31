@@ -118,9 +118,10 @@ impl CostEstimator {
 
         // Effective pricing with prompt caching ($0.50/1M in, $2.00/1M out blended)
         let effective_in = input_tokens as f64 * (0.15 * 0.90 + 0.85 * 0.10); // 90% discount on cache hits
-        let estimated_cost = ((effective_in * 0.50 / 1_000_000.0) + (output_tokens as f64 * 2.00 / 1_000_000.0))
+        let estimated_cost = ((effective_in * 0.50 / 1_000_000.0)
+            + (output_tokens as f64 * 2.00 / 1_000_000.0))
             .max(0.05);
-        let recommended_budget = ((estimated_cost * 1.35).round() as f64).max(0.10);
+        let recommended_budget = (estimated_cost * 1.35).round().max(0.10);
 
         let mut low_risk = 0;
         let mut med_risk = 0;
@@ -129,13 +130,18 @@ impl CostEstimator {
 
         for u in &units {
             let is_cyclic = u.is_cluster()
-                || cycles.iter().any(|c| c.iter().any(|n| u.node_ids().contains(n)));
+                || cycles
+                    .iter()
+                    .any(|c| c.iter().any(|n| u.node_ids().contains(n)));
             if is_cyclic {
                 high_risk += 1;
                 let name = if u.is_cluster() {
                     format!("cluster:[{}]", u.node_ids().join(", "))
                 } else {
-                    u.node_ids().first().cloned().unwrap_or_else(|| "unit".to_string())
+                    u.node_ids()
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| "unit".to_string())
                 };
                 high_cost_modules.push(name);
             } else if u.node_ids().len() > 1 {

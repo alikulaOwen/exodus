@@ -60,3 +60,10 @@ With these fixes, the measured unit contract pass rate reached **94.1%** (16/17 
 * Regression-fixture generation on case promotion is not implemented; `exodus cases test --mode
   verify` reports this honestly rather than fabricating a re-verification pass.
 * The two-run case-learning experiment (`fixtures/two_run_demo`) is not wired into the unit gate.
+
+## Sense & Intent Engine Invariants & Limitations
+
+* **Provisional Claim Grounding**: Human acceptance of a provisional claim allows it to guide planning and downstream synthesis, but does *not* falsely elevate its grounding tier to `Deterministic` or `Verified`. Behavioral contracts (`BehavioralContract`) remain the only grounded execution oracle.
+* **Evidence Scrubbing**: `SecretScrubber` aggressively redacts secrets, keys, and tokens from snippets before hash calculation, preventing accidental credential storage or terminal emission.
+* **Bounded Repair**: Automated repair cycles for unresolved claims or failed verifications are strictly bounded to $\le 3$ iterations per symbol before emitting fallback stubs and migration debt.
+

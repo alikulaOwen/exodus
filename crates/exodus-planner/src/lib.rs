@@ -369,12 +369,14 @@ impl MigrationPlanner {
             exodus_toolchain::DomainArchetype::SharedLibrary
         };
 
-        let sdlc_audit = Some(exodus_store::ArchitectureKnowledgeCatalog::audit_system_design(
-            &archetype,
-            "python",
-            "rust",
-            !circular_dependencies.is_empty(),
-        ));
+        let sdlc_audit = Some(
+            exodus_store::ArchitectureKnowledgeCatalog::audit_system_design(
+                &archetype,
+                "python",
+                "rust",
+                !circular_dependencies.is_empty(),
+            ),
+        );
 
         Ok(MigrationPlan {
             plan_id,
@@ -445,12 +447,14 @@ impl MigrationPlanner {
             .map(|p| p.domain_archetype)
             .unwrap_or(exodus_toolchain::DomainArchetype::BackendService);
 
-        let sdlc_audit = Some(exodus_store::ArchitectureKnowledgeCatalog::audit_system_design(
-            &primary_archetype,
-            "polyglot_source",
-            target_language,
-            false,
-        ));
+        let sdlc_audit = Some(
+            exodus_store::ArchitectureKnowledgeCatalog::audit_system_design(
+                &primary_archetype,
+                "polyglot_source",
+                target_language,
+                false,
+            ),
+        );
 
         Ok(WorkspaceMigrationPlan {
             plan_id,
@@ -576,8 +580,10 @@ mod tests {
 
     #[test]
     fn test_generate_workspace_plan() {
+        use exodus_toolchain::{
+            DomainArchetype, PackageDescriptor, WorkspaceDescriptor, WorkspaceToolchain,
+        };
         use std::path::PathBuf;
-        use exodus_toolchain::{DomainArchetype, PackageDescriptor, WorkspaceDescriptor, WorkspaceToolchain};
 
         let pkg_models = PackageDescriptor {
             name: "core-models".to_string(),
@@ -618,7 +624,9 @@ mod tests {
         assert_eq!(plan.package_waves.len(), 2);
         assert_eq!(plan.package_waves[0][0].name, "core-models");
         assert_eq!(plan.package_waves[1][0].name, "payment-service");
-        assert!(plan.package_waves[1][0].recommended_framework.contains("Axum"));
+        assert!(plan.package_waves[1][0]
+            .recommended_framework
+            .contains("Axum"));
         assert!(plan.sdlc_audit.is_some());
         let summary = plan.format_sdlc_summary();
         assert!(summary.contains("SDLC Readiness Score"));

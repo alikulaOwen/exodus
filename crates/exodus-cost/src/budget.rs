@@ -96,7 +96,9 @@ mod tests {
         assert!((spend - 0.027).abs() < 1e-6);
 
         // Record large batch that exceeds $1.00 limit
-        let err = guard.record_usage(500_000, 100_000, 1500, 6000).unwrap_err();
+        let err = guard
+            .record_usage(500_000, 100_000, 1500, 6000)
+            .unwrap_err();
         assert_eq!(err, BudgetError::ExceededHardLimit { limit_usd: 1.00 });
         assert!(guard.is_tripped());
     }

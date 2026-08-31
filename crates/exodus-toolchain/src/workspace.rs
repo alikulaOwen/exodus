@@ -109,7 +109,9 @@ impl DomainArchetype {
             (Self::SharedLibrary, "python" | "py") => "Pydantic + Dataclasses",
 
             (Self::FrontendApp, "rust" | "rs") => "Leptos / Dioxus Web (WASM)",
-            (Self::FrontendApp, "typescript" | "ts" | "javascript" | "js") => "Next.js / Vite React",
+            (Self::FrontendApp, "typescript" | "ts" | "javascript" | "js") => {
+                "Next.js / Vite React"
+            }
             (Self::FrontendApp, "go" | "golang") => "Templ + HTMX",
             (Self::FrontendApp, "python" | "py") => "Reflex / NiceGUI / Streamlit",
 
@@ -142,7 +144,8 @@ static GLOBAL_FRAMEWORK_REGISTRY: std::sync::OnceLock<std::sync::RwLock<Framewor
     std::sync::OnceLock::new();
 
 pub fn global_framework_registry() -> &'static std::sync::RwLock<FrameworkRegistry> {
-    GLOBAL_FRAMEWORK_REGISTRY.get_or_init(|| std::sync::RwLock::new(FrameworkRegistry::embedded_defaults()))
+    GLOBAL_FRAMEWORK_REGISTRY
+        .get_or_init(|| std::sync::RwLock::new(FrameworkRegistry::embedded_defaults()))
 }
 
 impl Default for FrameworkRegistry {
@@ -156,7 +159,11 @@ impl FrameworkRegistry {
     pub fn embedded_defaults() -> Self {
         let mut rules = Vec::new();
 
-        let add_rule = |rules: &mut Vec<FrameworkRule>, arch: DomainArchetype, lang: &str, fw: &str, deps: &[&str]| {
+        let add_rule = |rules: &mut Vec<FrameworkRule>,
+                        arch: DomainArchetype,
+                        lang: &str,
+                        fw: &str,
+                        deps: &[&str]| {
             rules.push(FrameworkRule {
                 archetype: arch,
                 target_language: lang.to_string(),
@@ -168,37 +175,182 @@ impl FrameworkRegistry {
         };
 
         // BackendService
-        add_rule(&mut rules, DomainArchetype::BackendService, "rust", "Axum + Tokio + Tower", &["axum", "tokio", "tower", "tower-http", "serde", "serde_json"]);
-        add_rule(&mut rules, DomainArchetype::BackendService, "go", "Gin / Fiber HTTP Router", &["github.com/gin-gonic/gin"]);
-        add_rule(&mut rules, DomainArchetype::BackendService, "typescript", "Fastify + Zod", &["fastify", "zod"]);
-        add_rule(&mut rules, DomainArchetype::BackendService, "python", "FastAPI + Pydantic v2", &["fastapi", "pydantic", "uvicorn"]);
-        add_rule(&mut rules, DomainArchetype::BackendService, "java", "Spring Boot Web Starter", &["org.springframework.boot:spring-boot-starter-web"]);
-        add_rule(&mut rules, DomainArchetype::BackendService, "kotlin", "Ktor / Spring Boot", &["io.ktor:ktor-server-core"]);
-        add_rule(&mut rules, DomainArchetype::BackendService, "csharp", "ASP.NET Core Minimal APIs", &["Microsoft.AspNetCore.App"]);
+        add_rule(
+            &mut rules,
+            DomainArchetype::BackendService,
+            "rust",
+            "Axum + Tokio + Tower",
+            &[
+                "axum",
+                "tokio",
+                "tower",
+                "tower-http",
+                "serde",
+                "serde_json",
+            ],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::BackendService,
+            "go",
+            "Gin / Fiber HTTP Router",
+            &["github.com/gin-gonic/gin"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::BackendService,
+            "typescript",
+            "Fastify + Zod",
+            &["fastify", "zod"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::BackendService,
+            "python",
+            "FastAPI + Pydantic v2",
+            &["fastapi", "pydantic", "uvicorn"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::BackendService,
+            "java",
+            "Spring Boot Web Starter",
+            &["org.springframework.boot:spring-boot-starter-web"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::BackendService,
+            "kotlin",
+            "Ktor / Spring Boot",
+            &["io.ktor:ktor-server-core"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::BackendService,
+            "csharp",
+            "ASP.NET Core Minimal APIs",
+            &["Microsoft.AspNetCore.App"],
+        );
 
         // CliTool
-        add_rule(&mut rules, DomainArchetype::CliTool, "rust", "Clap (derive) + Indicatif", &["clap", "indicatif", "anyhow"]);
-        add_rule(&mut rules, DomainArchetype::CliTool, "go", "Cobra + Pflag", &["github.com/spf13/cobra"]);
-        add_rule(&mut rules, DomainArchetype::CliTool, "typescript", "Commander + Inquirer", &["commander", "inquirer"]);
-        add_rule(&mut rules, DomainArchetype::CliTool, "python", "Typer + Rich", &["typer", "rich"]);
+        add_rule(
+            &mut rules,
+            DomainArchetype::CliTool,
+            "rust",
+            "Clap (derive) + Indicatif",
+            &["clap", "indicatif", "anyhow"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::CliTool,
+            "go",
+            "Cobra + Pflag",
+            &["github.com/spf13/cobra"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::CliTool,
+            "typescript",
+            "Commander + Inquirer",
+            &["commander", "inquirer"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::CliTool,
+            "python",
+            "Typer + Rich",
+            &["typer", "rich"],
+        );
 
         // WorkerQueue
-        add_rule(&mut rules, DomainArchetype::WorkerQueue, "rust", "Tokio Tasks + Lapin (AMQP) / RDKafka", &["tokio", "lapin", "rdkafka"]);
-        add_rule(&mut rules, DomainArchetype::WorkerQueue, "go", "Goroutines Channels + Asynq", &["github.com/hibiken/asynq"]);
-        add_rule(&mut rules, DomainArchetype::WorkerQueue, "typescript", "BullMQ + Redis", &["bullmq", "ioredis"]);
-        add_rule(&mut rules, DomainArchetype::WorkerQueue, "python", "Celery + Redis / Arq", &["celery", "redis"]);
+        add_rule(
+            &mut rules,
+            DomainArchetype::WorkerQueue,
+            "rust",
+            "Tokio Tasks + Lapin (AMQP) / RDKafka",
+            &["tokio", "lapin", "rdkafka"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::WorkerQueue,
+            "go",
+            "Goroutines Channels + Asynq",
+            &["github.com/hibiken/asynq"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::WorkerQueue,
+            "typescript",
+            "BullMQ + Redis",
+            &["bullmq", "ioredis"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::WorkerQueue,
+            "python",
+            "Celery + Redis / Arq",
+            &["celery", "redis"],
+        );
 
         // SharedLibrary
-        add_rule(&mut rules, DomainArchetype::SharedLibrary, "rust", "Serde + Thiserror + Anyhow", &["serde", "thiserror", "anyhow"]);
-        add_rule(&mut rules, DomainArchetype::SharedLibrary, "go", "Idiomatic Go Structs with JSON tags", &[]);
-        add_rule(&mut rules, DomainArchetype::SharedLibrary, "typescript", "Zod + ts-pattern", &["zod", "ts-pattern"]);
-        add_rule(&mut rules, DomainArchetype::SharedLibrary, "python", "Pydantic + Dataclasses", &["pydantic"]);
+        add_rule(
+            &mut rules,
+            DomainArchetype::SharedLibrary,
+            "rust",
+            "Serde + Thiserror + Anyhow",
+            &["serde", "thiserror", "anyhow"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::SharedLibrary,
+            "go",
+            "Idiomatic Go Structs with JSON tags",
+            &[],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::SharedLibrary,
+            "typescript",
+            "Zod + ts-pattern",
+            &["zod", "ts-pattern"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::SharedLibrary,
+            "python",
+            "Pydantic + Dataclasses",
+            &["pydantic"],
+        );
 
         // FrontendApp
-        add_rule(&mut rules, DomainArchetype::FrontendApp, "rust", "Leptos / Dioxus Web (WASM)", &["leptos", "wasm-bindgen"]);
-        add_rule(&mut rules, DomainArchetype::FrontendApp, "typescript", "Next.js / Vite React", &["react", "react-dom", "next"]);
-        add_rule(&mut rules, DomainArchetype::FrontendApp, "go", "Templ + HTMX", &["github.com/a-h/templ"]);
-        add_rule(&mut rules, DomainArchetype::FrontendApp, "python", "Reflex / NiceGUI / Streamlit", &["streamlit"]);
+        add_rule(
+            &mut rules,
+            DomainArchetype::FrontendApp,
+            "rust",
+            "Leptos / Dioxus Web (WASM)",
+            &["leptos", "wasm-bindgen"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::FrontendApp,
+            "typescript",
+            "Next.js / Vite React",
+            &["react", "react-dom", "next"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::FrontendApp,
+            "go",
+            "Templ + HTMX",
+            &["github.com/a-h/templ"],
+        );
+        add_rule(
+            &mut rules,
+            DomainArchetype::FrontendApp,
+            "python",
+            "Reflex / NiceGUI / Streamlit",
+            &["streamlit"],
+        );
 
         Self { rules }
     }
@@ -222,12 +374,18 @@ impl FrameworkRegistry {
         let norm_lang = Self::normalize_language(target_lang);
 
         // 1. Check user overrides first
-        if let Some(rule) = self.rules.iter().find(|r| r.is_user_override && r.archetype == archetype && Self::normalize_language(&r.target_language) == norm_lang) {
+        if let Some(rule) = self.rules.iter().find(|r| {
+            r.is_user_override
+                && r.archetype == archetype
+                && Self::normalize_language(&r.target_language) == norm_lang
+        }) {
             return rule.recommended_framework.clone();
         }
 
         // 2. Check standard rules
-        if let Some(rule) = self.rules.iter().find(|r| r.archetype == archetype && Self::normalize_language(&r.target_language) == norm_lang) {
+        if let Some(rule) = self.rules.iter().find(|r| {
+            r.archetype == archetype && Self::normalize_language(&r.target_language) == norm_lang
+        }) {
             return rule.recommended_framework.clone();
         }
 
@@ -238,7 +396,10 @@ impl FrameworkRegistry {
     /// Dynamically update or register a framework recommendation rule during a user session.
     pub fn upsert_rule(&mut self, rule: FrameworkRule) {
         let norm_lang = Self::normalize_language(&rule.target_language);
-        if let Some(pos) = self.rules.iter().position(|r| r.archetype == rule.archetype && Self::normalize_language(&r.target_language) == norm_lang) {
+        if let Some(pos) = self.rules.iter().position(|r| {
+            r.archetype == rule.archetype
+                && Self::normalize_language(&r.target_language) == norm_lang
+        }) {
             self.rules[pos] = rule;
         } else {
             self.rules.push(rule);
@@ -274,7 +435,10 @@ impl FrameworkRegistry {
                     let defaults = Self::embedded_defaults();
                     for def_rule in defaults.rules {
                         let norm = Self::normalize_language(&def_rule.target_language);
-                        if !loaded.rules.iter().any(|r| r.archetype == def_rule.archetype && Self::normalize_language(&r.target_language) == norm) {
+                        if !loaded.rules.iter().any(|r| {
+                            r.archetype == def_rule.archetype
+                                && Self::normalize_language(&r.target_language) == norm
+                        }) {
                             loaded.rules.push(def_rule);
                         }
                     }
@@ -292,8 +456,7 @@ impl FrameworkRegistry {
     pub fn save_to_dir(&self, knowledge_dir: &Path) -> std::io::Result<PathBuf> {
         std::fs::create_dir_all(knowledge_dir)?;
         let file_path = knowledge_dir.join("framework_rules.json");
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
         std::fs::write(&file_path, json)?;
         Ok(file_path)
     }
@@ -326,11 +489,8 @@ pub struct WorkspaceDescriptor {
 impl WorkspaceDescriptor {
     /// Returns packages topologically sorted (foundations/leaves first, dependents last).
     pub fn topological_waves(&self) -> Vec<Vec<&PackageDescriptor>> {
-        let pkg_map: HashMap<&str, &PackageDescriptor> = self
-            .packages
-            .iter()
-            .map(|p| (p.name.as_str(), p))
-            .collect();
+        let pkg_map: HashMap<&str, &PackageDescriptor> =
+            self.packages.iter().map(|p| (p.name.as_str(), p)).collect();
 
         let mut in_degrees: HashMap<&str, usize> = HashMap::new();
         let mut dependents_map: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -340,7 +500,10 @@ impl WorkspaceDescriptor {
             for dep in &pkg.dependencies {
                 if pkg_map.contains_key(dep.as_str()) {
                     *in_degrees.entry(&pkg.name).or_insert(0) += 1;
-                    dependents_map.entry(dep.as_str()).or_default().push(&pkg.name);
+                    dependents_map
+                        .entry(dep.as_str())
+                        .or_default()
+                        .push(&pkg.name);
                 }
             }
         }
@@ -364,8 +527,10 @@ impl WorkspaceDescriptor {
                     .filter(|&k| !visited.contains(k))
                     .collect();
                 if !remaining.is_empty() {
-                    let wave_pkgs: Vec<&PackageDescriptor> =
-                        remaining.into_iter().filter_map(|k| pkg_map.get(k).copied()).collect();
+                    let wave_pkgs: Vec<&PackageDescriptor> = remaining
+                        .into_iter()
+                        .filter_map(|k| pkg_map.get(k).copied())
+                        .collect();
                     waves.push(wave_pkgs);
                 }
                 break;
@@ -399,7 +564,11 @@ impl WorkspaceDescriptor {
         let q = query.to_lowercase();
         let trimmed_q = q.trim();
 
-        if trimmed_q == "all" || trimmed_q == "workspace" || trimmed_q == "monorepo" || trimmed_q.is_empty() {
+        if trimmed_q == "all"
+            || trimmed_q == "workspace"
+            || trimmed_q == "monorepo"
+            || trimmed_q.is_empty()
+        {
             return self.packages.iter().collect();
         }
 
@@ -422,11 +591,14 @@ impl WorkspaceDescriptor {
             for pkg in &self.packages {
                 let archetype_str = pkg.domain_archetype.display_name().to_lowercase();
                 if q.contains(&archetype_str)
-                    || (q.contains("service") && pkg.domain_archetype == DomainArchetype::BackendService)
+                    || (q.contains("service")
+                        && pkg.domain_archetype == DomainArchetype::BackendService)
                     || (q.contains("cli") && pkg.domain_archetype == DomainArchetype::CliTool)
-                    || (q.contains("worker") && pkg.domain_archetype == DomainArchetype::WorkerQueue)
+                    || (q.contains("worker")
+                        && pkg.domain_archetype == DomainArchetype::WorkerQueue)
                     || (q.contains("lib") && pkg.domain_archetype == DomainArchetype::SharedLibrary)
-                    || (q.contains("frontend") && pkg.domain_archetype == DomainArchetype::FrontendApp)
+                    || (q.contains("frontend")
+                        && pkg.domain_archetype == DomainArchetype::FrontendApp)
                 {
                     matches.push(pkg);
                 }
@@ -539,7 +711,9 @@ impl WorkspaceScanner {
     /// Discovers all member packages within the workspace.
     fn discover_packages(root: &Path, _toolchain: WorkspaceToolchain) -> Vec<PackageDescriptor> {
         let mut packages = Vec::new();
-        let candidate_dirs = ["packages", "apps", "services", "crates", "libs", "modules", "src"];
+        let candidate_dirs = [
+            "packages", "apps", "services", "crates", "libs", "modules", "src",
+        ];
 
         for dir_name in &candidate_dirs {
             let search_dir = root.join(dir_name);
@@ -568,10 +742,7 @@ impl WorkspaceScanner {
             .unwrap_or("unnamed")
             .to_string();
 
-        let rel_path = pkg_dir
-            .strip_prefix(root)
-            .unwrap_or(pkg_dir)
-            .to_path_buf();
+        let rel_path = pkg_dir.strip_prefix(root).unwrap_or(pkg_dir).to_path_buf();
 
         let mut manifest_file = None;
         let mut source_lang = "python".to_string();
@@ -628,7 +799,10 @@ impl WorkspaceScanner {
             let content = fs::read_to_string(pyproject_path.as_path())
                 .or_else(|_| fs::read_to_string(req_path.as_path()))
                 .unwrap_or_default();
-            if content.contains("fastapi") || content.contains("flask") || content.contains("django") {
+            if content.contains("fastapi")
+                || content.contains("flask")
+                || content.contains("django")
+            {
                 domain = DomainArchetype::BackendService;
             } else if content.contains("click") || content.contains("typer") {
                 domain = DomainArchetype::CliTool;
@@ -643,7 +817,10 @@ impl WorkspaceScanner {
             manifest_file = Some(go_mod_path.clone());
             source_lang = "go".to_string();
             if let Ok(content) = fs::read_to_string(&go_mod_path) {
-                if content.contains("gin-gonic") || content.contains("fiber") || content.contains("echo") {
+                if content.contains("gin-gonic")
+                    || content.contains("fiber")
+                    || content.contains("echo")
+                {
                     domain = DomainArchetype::BackendService;
                 } else if content.contains("cobra") {
                     domain = DomainArchetype::CliTool;
@@ -678,7 +855,11 @@ impl WorkspaceScanner {
         })
     }
 
-    fn classify_domain_from_deps(deps: &[String], pkg_name: &str, rel_path: &Path) -> DomainArchetype {
+    fn classify_domain_from_deps(
+        deps: &[String],
+        pkg_name: &str,
+        rel_path: &Path,
+    ) -> DomainArchetype {
         let deps_str = deps.join(" ").to_lowercase();
         if deps_str.contains("express")
             || deps_str.contains("fastify")
@@ -687,9 +868,15 @@ impl WorkspaceScanner {
             || deps_str.contains("@nestjs")
         {
             DomainArchetype::BackendService
-        } else if deps_str.contains("commander") || deps_str.contains("yargs") || deps_str.contains("cac") {
+        } else if deps_str.contains("commander")
+            || deps_str.contains("yargs")
+            || deps_str.contains("cac")
+        {
             DomainArchetype::CliTool
-        } else if deps_str.contains("bull") || deps_str.contains("bullmq") || deps_str.contains("kafkajs") {
+        } else if deps_str.contains("bull")
+            || deps_str.contains("bullmq")
+            || deps_str.contains("kafkajs")
+        {
             DomainArchetype::WorkerQueue
         } else if deps_str.contains("next")
             || deps_str.contains("react")
@@ -713,9 +900,15 @@ impl WorkspaceScanner {
             || name_lower.contains("server")
         {
             DomainArchetype::BackendService
-        } else if path_lower.contains("cli") || name_lower.ends_with("-cli") || name_lower.contains("tool") {
+        } else if path_lower.contains("cli")
+            || name_lower.ends_with("-cli")
+            || name_lower.contains("tool")
+        {
             DomainArchetype::CliTool
-        } else if path_lower.contains("worker") || name_lower.ends_with("-worker") || name_lower.contains("queue") {
+        } else if path_lower.contains("worker")
+            || name_lower.ends_with("-worker")
+            || name_lower.contains("queue")
+        {
             DomainArchetype::WorkerQueue
         } else if path_lower.contains("packages")
             || path_lower.contains("libs")
@@ -727,7 +920,10 @@ impl WorkspaceScanner {
             || name_lower.contains("utils")
         {
             DomainArchetype::SharedLibrary
-        } else if path_lower.contains("apps") || name_lower.contains("web") || name_lower.contains("frontend") {
+        } else if path_lower.contains("apps")
+            || name_lower.contains("web")
+            || name_lower.contains("frontend")
+        {
             DomainArchetype::FrontendApp
         } else {
             DomainArchetype::SharedLibrary
@@ -744,7 +940,12 @@ impl WorkspaceScanner {
             for entry in entries.flatten() {
                 let path = entry.path();
                 let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                if file_name.starts_with('.') || file_name == "node_modules" || file_name == "target" || file_name == "dist" || file_name == "build" {
+                if file_name.starts_with('.')
+                    || file_name == "node_modules"
+                    || file_name == "target"
+                    || file_name == "dist"
+                    || file_name == "build"
+                {
                     continue;
                 }
                 if path.is_dir() {
@@ -752,15 +953,42 @@ impl WorkspaceScanner {
                 } else if path.is_file() {
                     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                         let is_source = match ext {
-                            "rs" => { *detected_lang = "rust".to_string(); true },
-                            "ts" | "tsx" => { *detected_lang = "typescript".to_string(); true },
-                            "js" | "jsx" => { *detected_lang = "javascript".to_string(); true },
-                            "py" => { *detected_lang = "python".to_string(); true },
-                            "go" => { *detected_lang = "go".to_string(); true },
-                            "java" => { *detected_lang = "java".to_string(); true },
-                            "kt" => { *detected_lang = "kotlin".to_string(); true },
-                            "cpp" | "cc" | "cxx" | "h" | "hpp" => { *detected_lang = "cpp".to_string(); true },
-                            "cs" => { *detected_lang = "csharp".to_string(); true },
+                            "rs" => {
+                                *detected_lang = "rust".to_string();
+                                true
+                            }
+                            "ts" | "tsx" => {
+                                *detected_lang = "typescript".to_string();
+                                true
+                            }
+                            "js" | "jsx" => {
+                                *detected_lang = "javascript".to_string();
+                                true
+                            }
+                            "py" => {
+                                *detected_lang = "python".to_string();
+                                true
+                            }
+                            "go" => {
+                                *detected_lang = "go".to_string();
+                                true
+                            }
+                            "java" => {
+                                *detected_lang = "java".to_string();
+                                true
+                            }
+                            "kt" => {
+                                *detected_lang = "kotlin".to_string();
+                                true
+                            }
+                            "cpp" | "cc" | "cxx" | "h" | "hpp" => {
+                                *detected_lang = "cpp".to_string();
+                                true
+                            }
+                            "cs" => {
+                                *detected_lang = "csharp".to_string();
+                                true
+                            }
                             _ => false,
                         };
                         if is_source {
@@ -828,10 +1056,18 @@ mod tests {
         assert_eq!(ws.toolchain, WorkspaceToolchain::Turborepo);
         assert_eq!(ws.packages.len(), 2);
 
-        let core_pkg = ws.packages.iter().find(|p| p.name == "core-models").unwrap();
+        let core_pkg = ws
+            .packages
+            .iter()
+            .find(|p| p.name == "core-models")
+            .unwrap();
         assert_eq!(core_pkg.domain_archetype, DomainArchetype::SharedLibrary);
 
-        let svc_pkg = ws.packages.iter().find(|p| p.name == "payment-service").unwrap();
+        let svc_pkg = ws
+            .packages
+            .iter()
+            .find(|p| p.name == "payment-service")
+            .unwrap();
         assert_eq!(svc_pkg.domain_archetype, DomainArchetype::BackendService);
     }
 
@@ -913,7 +1149,9 @@ mod tests {
         let mut reg = FrameworkRegistry::embedded_defaults();
 
         // Check embedded default
-        assert!(reg.get_framework(DomainArchetype::BackendService, "rust").contains("Axum"));
+        assert!(reg
+            .get_framework(DomainArchetype::BackendService, "rust")
+            .contains("Axum"));
 
         // User updates session for a novel / unthought-of scenario (e.g. Actix-web + SQLx)
         reg.set_user_override(
@@ -941,7 +1179,8 @@ mod tests {
             "Actix-Web + SQLx + Tokio"
         );
         // Default rule for other languages still preserved
-        assert!(loaded.get_framework(DomainArchetype::BackendService, "go").contains("Gin"));
+        assert!(loaded
+            .get_framework(DomainArchetype::BackendService, "go")
+            .contains("Gin"));
     }
 }
-

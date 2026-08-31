@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use exodus_core::Result;
+use exodus_core::{Result, TargetLanguageSpecRecord};
 use exodus_toolchain::DomainArchetype;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -67,13 +67,19 @@ impl RolePolicyRecord {
     pub fn evaluate(&self, resource_path: &Path, action: PolicyAction) -> PolicyDecision {
         if self.denied_actions.contains(&action) {
             return PolicyDecision::Deny {
-                reason: format!("Action {:?} is explicitly denied for role `{}`", action, self.role_id),
+                reason: format!(
+                    "Action {:?} is explicitly denied for role `{}`",
+                    action, self.role_id
+                ),
             };
         }
 
         if !self.allowed_actions.is_empty() && !self.allowed_actions.contains(&action) {
             return PolicyDecision::Deny {
-                reason: format!("Action {:?} is not in the allowed actions for role `{}`", action, self.role_id),
+                reason: format!(
+                    "Action {:?} is not in the allowed actions for role `{}`",
+                    action, self.role_id
+                ),
             };
         }
 
@@ -282,22 +288,38 @@ pub struct HostToolStateRecord {
 #[async_trait]
 pub trait DynamicLivingMemory: Send + Sync {
     async fn get_role(&self, role_id: &str) -> Result<Option<DynamicRoleDefinitionRecord>>;
-    async fn list_roles_for_archetype(&self, archetype: DomainArchetype) -> Result<Vec<DynamicRoleDefinitionRecord>>;
+    async fn list_roles_for_archetype(
+        &self,
+        archetype: DomainArchetype,
+    ) -> Result<Vec<DynamicRoleDefinitionRecord>>;
     async fn list_all_roles(&self) -> Result<Vec<DynamicRoleDefinitionRecord>>;
     async fn upsert_role(&self, role: &DynamicRoleDefinitionRecord) -> Result<()>;
 
-    async fn get_pattern(&self, source_lang: &str, target_lang: &str, archetype: DomainArchetype) -> Result<Option<ArchitecturalPatternRecord>>;
+    async fn get_pattern(
+        &self,
+        source_lang: &str,
+        target_lang: &str,
+        archetype: DomainArchetype,
+    ) -> Result<Option<ArchitecturalPatternRecord>>;
     async fn upsert_pattern(&self, pattern: &ArchitecturalPatternRecord) -> Result<()>;
     async fn list_patterns(&self) -> Result<Vec<ArchitecturalPatternRecord>>;
 
-    async fn get_framework_definition(&self, source_framework: &str, target_lang: &str) -> Result<Option<FrameworkDefinitionRecord>>;
+    async fn get_framework_definition(
+        &self,
+        source_framework: &str,
+        target_lang: &str,
+    ) -> Result<Option<FrameworkDefinitionRecord>>;
     async fn upsert_framework_definition(&self, def: &FrameworkDefinitionRecord) -> Result<()>;
 
     async fn list_sdlc_checklist(&self) -> Result<Vec<SdlcChecklistRecord>>;
     async fn upsert_sdlc_checklist_item(&self, item: &SdlcChecklistRecord) -> Result<()>;
 
     async fn get_skill(&self, skill_id: &str) -> Result<Option<RepoSetupSkillRecord>>;
-    async fn get_skills_for_target(&self, target_lang: &str, archetype: &DomainArchetype) -> Result<Vec<RepoSetupSkillRecord>>;
+    async fn get_skills_for_target(
+        &self,
+        target_lang: &str,
+        archetype: &DomainArchetype,
+    ) -> Result<Vec<RepoSetupSkillRecord>>;
     async fn list_skills(&self) -> Result<Vec<RepoSetupSkillRecord>>;
     async fn upsert_skill(&self, skill: &RepoSetupSkillRecord) -> Result<()>;
 
@@ -312,6 +334,11 @@ pub trait DynamicLivingMemory: Send + Sync {
     async fn list_tool_states(&self) -> Result<Vec<HostToolStateRecord>>;
     async fn probe_and_sync_tool_states(&self) -> Result<Vec<HostToolStateRecord>>;
 
+    async fn get_language_spec(&self, query: &str) -> Result<Option<TargetLanguageSpecRecord>>;
+    async fn list_language_specs(&self) -> Result<Vec<TargetLanguageSpecRecord>>;
+    async fn upsert_language_spec(&self, spec: &TargetLanguageSpecRecord) -> Result<()>;
+    async fn reset_language_specs(&self) -> Result<()>;
+
     async fn ensure_seeded(&self) -> Result<()>;
 }
 
@@ -325,6 +352,7 @@ pub struct InMemoryLivingMemory {
     skills: Arc<RwLock<HashMap<String, RepoSetupSkillRecord>>>,
     tools: Arc<RwLock<HashMap<String, HostToolDefinitionRecord>>>,
     tool_states: Arc<RwLock<HashMap<String, HostToolStateRecord>>>,
+    languages: Arc<RwLock<HashMap<String, TargetLanguageSpecRecord>>>,
 }
 
 impl InMemoryLivingMemory {
@@ -333,6 +361,7 @@ impl InMemoryLivingMemory {
         let patterns = Self::seed_default_patterns();
         let skills = Self::seed_default_skills();
         let tools = Self::seed_default_tools();
+        let languages = Self::seed_default_languages();
         Self {
             roles: Arc::new(RwLock::new(roles)),
             patterns: Arc::new(RwLock::new(patterns)),
@@ -341,7 +370,15 @@ impl InMemoryLivingMemory {
             skills: Arc::new(RwLock::new(skills)),
             tools: Arc::new(RwLock::new(tools)),
             tool_states: Arc::new(RwLock::new(HashMap::new())),
+            languages: Arc::new(RwLock::new(languages)),
         }
+    }
+
+    pub fn seed_default_languages() -> HashMap<String, TargetLanguageSpecRecord> {
+        TargetLanguageSpecRecord::default_specs()
+            .into_iter()
+            .map(|s| (s.id.clone(), s))
+            .collect()
     }
 
     pub async fn ensure_seeded(&self) -> Result<()> {
@@ -509,7 +546,10 @@ impl InMemoryLivingMemory {
             version: "1.0.0".to_string(),
             updated_at: now,
         };
-        roles_map.insert(core_algorithms_engineer.id.clone(), core_algorithms_engineer);
+        roles_map.insert(
+            core_algorithms_engineer.id.clone(),
+            core_algorithms_engineer,
+        );
 
         // CLI UX Engineer
         let cli_ux_engineer = DynamicRoleDefinitionRecord {
@@ -573,7 +613,13 @@ impl InMemoryLivingMemory {
             version: "1.0.0".to_string(),
             updated_at: now,
         };
-        patterns_map.insert(format!("{}_{}_{:?}", backend_pattern.source_lang, backend_pattern.target_lang, backend_pattern.archetype), backend_pattern);
+        patterns_map.insert(
+            format!(
+                "{}_{}_{:?}",
+                backend_pattern.source_lang, backend_pattern.target_lang, backend_pattern.archetype
+            ),
+            backend_pattern,
+        );
         patterns_map
     }
 
@@ -955,11 +1001,18 @@ impl DynamicLivingMemory for InMemoryLivingMemory {
         Ok(guard.get(role_id).cloned())
     }
 
-    async fn list_roles_for_archetype(&self, archetype: DomainArchetype) -> Result<Vec<DynamicRoleDefinitionRecord>> {
+    async fn list_roles_for_archetype(
+        &self,
+        archetype: DomainArchetype,
+    ) -> Result<Vec<DynamicRoleDefinitionRecord>> {
         let guard = self.roles.read().await;
         let mut matching: Vec<DynamicRoleDefinitionRecord> = guard
             .values()
-            .filter(|r| r.target_archetype == archetype || r.target_archetype == DomainArchetype::Unknown || r.id == "lead_architect")
+            .filter(|r| {
+                r.target_archetype == archetype
+                    || r.target_archetype == DomainArchetype::Unknown
+                    || r.id == "lead_architect"
+            })
             .cloned()
             .collect();
         matching.sort_by(|a, b| a.id.cmp(&b.id));
@@ -979,7 +1032,12 @@ impl DynamicLivingMemory for InMemoryLivingMemory {
         Ok(())
     }
 
-    async fn get_pattern(&self, source_lang: &str, target_lang: &str, archetype: DomainArchetype) -> Result<Option<ArchitecturalPatternRecord>> {
+    async fn get_pattern(
+        &self,
+        source_lang: &str,
+        target_lang: &str,
+        archetype: DomainArchetype,
+    ) -> Result<Option<ArchitecturalPatternRecord>> {
         let guard = self.patterns.read().await;
         let key = format!("{source_lang}_{target_lang}_{archetype:?}");
         if let Some(pat) = guard.get(&key) {
@@ -996,7 +1054,10 @@ impl DynamicLivingMemory for InMemoryLivingMemory {
 
     async fn upsert_pattern(&self, pattern: &ArchitecturalPatternRecord) -> Result<()> {
         let mut guard = self.patterns.write().await;
-        let key = format!("{}_{}_{:?}", pattern.source_lang, pattern.target_lang, pattern.archetype);
+        let key = format!(
+            "{}_{}_{:?}",
+            pattern.source_lang, pattern.target_lang, pattern.archetype
+        );
         guard.insert(key, pattern.clone());
         Ok(())
     }
@@ -1006,7 +1067,11 @@ impl DynamicLivingMemory for InMemoryLivingMemory {
         Ok(guard.values().cloned().collect())
     }
 
-    async fn get_framework_definition(&self, source_framework: &str, target_lang: &str) -> Result<Option<FrameworkDefinitionRecord>> {
+    async fn get_framework_definition(
+        &self,
+        source_framework: &str,
+        target_lang: &str,
+    ) -> Result<Option<FrameworkDefinitionRecord>> {
         let guard = self.frameworks.read().await;
         let key = format!("{source_framework}_{target_lang}");
         Ok(guard.get(&key).cloned())
@@ -1035,13 +1100,19 @@ impl DynamicLivingMemory for InMemoryLivingMemory {
         Ok(guard.get(skill_id).cloned())
     }
 
-    async fn get_skills_for_target(&self, target_lang: &str, archetype: &DomainArchetype) -> Result<Vec<RepoSetupSkillRecord>> {
+    async fn get_skills_for_target(
+        &self,
+        target_lang: &str,
+        archetype: &DomainArchetype,
+    ) -> Result<Vec<RepoSetupSkillRecord>> {
         let guard = self.skills.read().await;
         let mut matching: Vec<RepoSetupSkillRecord> = guard
             .values()
             .filter(|s| {
-                let lang_match = s.target_language == "any" || s.target_language.eq_ignore_ascii_case(target_lang);
-                let arch_match = s.target_archetype == DomainArchetype::Unknown || s.target_archetype == *archetype;
+                let lang_match = s.target_language == "any"
+                    || s.target_language.eq_ignore_ascii_case(target_lang);
+                let arch_match = s.target_archetype == DomainArchetype::Unknown
+                    || s.target_archetype == *archetype;
                 lang_match && arch_match
             })
             .cloned()
@@ -1136,12 +1207,16 @@ impl DynamicLivingMemory for InMemoryLivingMemory {
             let status_str = match probed_status {
                 exodus_toolchain::ToolStatus::Available => "Available".to_string(),
                 exodus_toolchain::ToolStatus::Missing => "Missing".to_string(),
-                exodus_toolchain::ToolStatus::Incompatible(reason) => format!("Incompatible: {reason}"),
+                exodus_toolchain::ToolStatus::Incompatible(reason) => {
+                    format!("Incompatible: {reason}")
+                }
             };
 
             let mode_str = match exec_mode {
                 exodus_toolchain::ExecutionMode::Native => "Native".to_string(),
-                exodus_toolchain::ExecutionMode::ContainerFallback => "ContainerFallback".to_string(),
+                exodus_toolchain::ExecutionMode::ContainerFallback => {
+                    "ContainerFallback".to_string()
+                }
                 exodus_toolchain::ExecutionMode::Unavailable => "Unavailable".to_string(),
             };
 
@@ -1161,6 +1236,35 @@ impl DynamicLivingMemory for InMemoryLivingMemory {
         Ok(recorded_states)
     }
 
+    async fn get_language_spec(&self, query: &str) -> Result<Option<TargetLanguageSpecRecord>> {
+        let guard = self.languages.read().await;
+        for spec in guard.values() {
+            if spec.matches_query(query) {
+                return Ok(Some(spec.clone()));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn list_language_specs(&self) -> Result<Vec<TargetLanguageSpecRecord>> {
+        let guard = self.languages.read().await;
+        let mut list: Vec<_> = guard.values().cloned().collect();
+        list.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(list)
+    }
+
+    async fn upsert_language_spec(&self, spec: &TargetLanguageSpecRecord) -> Result<()> {
+        let mut guard = self.languages.write().await;
+        guard.insert(spec.id.clone(), spec.clone());
+        Ok(())
+    }
+
+    async fn reset_language_specs(&self) -> Result<()> {
+        let mut guard = self.languages.write().await;
+        *guard = Self::seed_default_languages();
+        Ok(())
+    }
+
     async fn ensure_seeded(&self) -> Result<()> {
         let mut r = self.roles.write().await;
         if r.is_empty() {
@@ -1178,6 +1282,10 @@ impl DynamicLivingMemory for InMemoryLivingMemory {
         if t.is_empty() {
             *t = Self::seed_default_tools();
         }
+        let mut l = self.languages.write().await;
+        if l.is_empty() {
+            *l = Self::seed_default_languages();
+        }
         Ok(())
     }
 }
@@ -1185,6 +1293,7 @@ impl DynamicLivingMemory for InMemoryLivingMemory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use exodus_core::ToolchainProfile;
 
     #[tokio::test]
     async fn test_dynamic_living_memory_seeding_and_queries() {
@@ -1192,11 +1301,18 @@ mod tests {
         mem.ensure_seeded().await.unwrap();
 
         // 1. Query Lead Architect
-        let lead = mem.get_role("lead_architect").await.unwrap().expect("Lead architect present");
+        let lead = mem
+            .get_role("lead_architect")
+            .await
+            .unwrap()
+            .expect("Lead architect present");
         assert_eq!(lead.parameters.model_tier, "Frontier");
 
         // 2. Query Roles for BackendService
-        let backend_roles = mem.list_roles_for_archetype(DomainArchetype::BackendService).await.unwrap();
+        let backend_roles = mem
+            .list_roles_for_archetype(DomainArchetype::BackendService)
+            .await
+            .unwrap();
         let role_ids: Vec<_> = backend_roles.iter().map(|r| r.id.as_str()).collect();
         assert!(role_ids.contains(&"lead_architect"));
         assert!(role_ids.contains(&"backend_engineer"));
@@ -1204,11 +1320,19 @@ mod tests {
         assert!(role_ids.contains(&"devops_sre_engineer"));
 
         // 3. ABAC Policy evaluation: DevOps writing to Dockerfile vs src/api.rs
-        let devops = mem.get_role("devops_sre_engineer").await.unwrap().expect("DevOps present");
-        let docker_decision = devops.abac_policy.evaluate(Path::new("Dockerfile"), PolicyAction::WriteFile);
+        let devops = mem
+            .get_role("devops_sre_engineer")
+            .await
+            .unwrap()
+            .expect("DevOps present");
+        let docker_decision = devops
+            .abac_policy
+            .evaluate(Path::new("Dockerfile"), PolicyAction::WriteFile);
         assert_eq!(docker_decision, PolicyDecision::Allow);
 
-        let code_decision = devops.abac_policy.evaluate(Path::new("src/api/routes.rs"), PolicyAction::WriteFile);
+        let code_decision = devops
+            .abac_policy
+            .evaluate(Path::new("src/api/routes.rs"), PolicyAction::WriteFile);
         assert!(matches!(code_decision, PolicyDecision::Deny { .. }));
     }
 
@@ -1244,11 +1368,20 @@ mod tests {
 
         mem.upsert_role(&custom_role).await.unwrap();
 
-        let fetched = mem.get_role("security_auditor").await.unwrap().expect("Auditor found");
-        assert_eq!(fetched.parameters.custom_flags.get("audit_owasp").unwrap(), "true");
+        let fetched = mem
+            .get_role("security_auditor")
+            .await
+            .unwrap()
+            .expect("Auditor found");
+        assert_eq!(
+            fetched.parameters.custom_flags.get("audit_owasp").unwrap(),
+            "true"
+        );
 
         // Deny write for read-only auditor
-        let write_decision = fetched.abac_policy.evaluate(Path::new("src/lib.rs"), PolicyAction::WriteFile);
+        let write_decision = fetched
+            .abac_policy
+            .evaluate(Path::new("src/lib.rs"), PolicyAction::WriteFile);
         assert!(matches!(write_decision, PolicyDecision::Deny { .. }));
     }
 
@@ -1258,7 +1391,10 @@ mod tests {
         mem.ensure_seeded().await.unwrap();
 
         // 1. Fetch Rust skills for BackendService
-        let rust_skills = mem.get_skills_for_target("rust", &DomainArchetype::BackendService).await.unwrap();
+        let rust_skills = mem
+            .get_skills_for_target("rust", &DomainArchetype::BackendService)
+            .await
+            .unwrap();
         let skill_ids: Vec<_> = rust_skills.iter().map(|s| s.id.as_str()).collect();
         assert!(skill_ids.contains(&"skill_rust_workspace"));
         assert!(skill_ids.contains(&"skill_distroless_container"));
@@ -1267,7 +1403,10 @@ mod tests {
         assert!(skill_ids.contains(&"skill_openwiki_docs"));
 
         // 2. Fetch Go skills for SharedLibrary
-        let go_skills = mem.get_skills_for_target("go", &DomainArchetype::SharedLibrary).await.unwrap();
+        let go_skills = mem
+            .get_skills_for_target("go", &DomainArchetype::SharedLibrary)
+            .await
+            .unwrap();
         let go_ids: Vec<_> = go_skills.iter().map(|s| s.id.as_str()).collect();
         assert!(go_ids.contains(&"skill_go_standard_layout"));
         assert!(go_ids.contains(&"skill_openwiki_docs"));
@@ -1288,7 +1427,69 @@ mod tests {
         };
         mem.upsert_skill(&custom_skill).await.unwrap();
 
-        let fetched = mem.get_skill("skill_biome_formatting").await.unwrap().expect("Skill present");
+        let fetched = mem
+            .get_skill("skill_biome_formatting")
+            .await
+            .unwrap()
+            .expect("Skill present");
         assert_eq!(fetched.name, "Biome High-Performance Linter/Formatter");
+    }
+
+    #[tokio::test]
+    async fn test_dynamic_language_spec_seeding_and_mutation() {
+        let mem = InMemoryLivingMemory::new();
+        mem.ensure_seeded().await.unwrap();
+
+        let specs = mem.list_language_specs().await.unwrap();
+        assert!(specs.len() >= 9);
+
+        let zig = mem
+            .get_language_spec("zig")
+            .await
+            .unwrap()
+            .expect("Zig found");
+        assert_eq!(zig.manifest_name, "build.zig");
+        assert_eq!(zig.file_extension, "zig");
+
+        let kotlin = mem
+            .get_language_spec("kt")
+            .await
+            .unwrap()
+            .expect("Kotlin alias found");
+        assert_eq!(kotlin.id, "kotlin");
+        assert_eq!(kotlin.manifest_name, "build.gradle.kts");
+
+        let swift_spec = TargetLanguageSpecRecord {
+            id: "swift".to_string(),
+            name: "Swift".to_string(),
+            aliases: vec![],
+            file_extension: "swift".to_string(),
+            source_dir: "Sources".to_string(),
+            manifest_name: "Package.swift".to_string(),
+            entrypoint_filename: "main.swift".to_string(),
+            ecosystem_container_term: "Package".to_string(),
+            entrypoint_template: "// Autonomous Project Exodus Migrated Target (Swift)\nprint(\"Hello Swift\")\n".to_string(),
+            module_stub_template: "// Migrated Swift module `{{module_name}}`\n".to_string(),
+            module_export_template: None,
+            package_manifest_template: "// swift-tools-version: 5.9\nimport PackageDescription\n\nlet package = Package(name: \"{{pkg_name}}\")\n".to_string(),
+            workspace_manifest_filename: None,
+            workspace_manifest_template: None,
+            workspace_member_template: None,
+            internal_dependency_template: None,
+            version_files: vec![],
+            quickstart_command: "swift test".to_string(),
+            test_harness_template: "import XCTest\n\nfinal class Tests: XCTestCase {\n{{test_cases}}\n}\n".to_string(),
+            test_case_template: "func test_{{case_id}}() {}".to_string(),
+            toolchain_profile: ToolchainProfile::new("swift", ["swift", "build"]),
+            signature_rule_sets: Vec::new(),
+        };
+        mem.upsert_language_spec(&swift_spec).await.unwrap();
+
+        let fetched_swift = mem
+            .get_language_spec("swift")
+            .await
+            .unwrap()
+            .expect("Swift found");
+        assert_eq!(fetched_swift.manifest_name, "Package.swift");
     }
 }

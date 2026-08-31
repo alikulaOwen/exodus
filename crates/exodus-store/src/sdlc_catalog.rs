@@ -227,8 +227,12 @@ mod tests {
     fn test_preseeded_catalog_recommendations() {
         let recs = ArchitectureKnowledgeCatalog::preseeded_recommendations();
         assert!(recs.len() >= 6);
-        assert!(recs.iter().any(|r| r.category == SdlcCategory::Observability));
-        assert!(recs.iter().any(|r| r.category == SdlcCategory::LifecycleAndResilience));
+        assert!(recs
+            .iter()
+            .any(|r| r.category == SdlcCategory::Observability));
+        assert!(recs
+            .iter()
+            .any(|r| r.category == SdlcCategory::LifecycleAndResilience));
     }
 
     #[test]
@@ -238,7 +242,9 @@ mod tests {
             "python",
             "rust",
         );
-        assert!(thesis.hypothesis.contains("eliminates thread pool starvation"));
+        assert!(thesis
+            .hypothesis
+            .contains("eliminates thread pool starvation"));
         assert_eq!(thesis.verification_assertions.len(), 3);
     }
 

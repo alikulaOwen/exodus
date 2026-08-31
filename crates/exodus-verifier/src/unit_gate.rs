@@ -344,11 +344,15 @@ pub async fn run_unit_gate(
         && assertions_passed > 0
         && assertions_passed == assertions_total
     {
-        if has_any_fallback {
+        if has_stub_fallback {
+            MigrationOutcome::Degraded
+        } else if has_any_fallback {
             MigrationOutcome::Compatible
         } else {
             MigrationOutcome::Verified
         }
+    } else if has_stub_fallback || has_any_fallback {
+        MigrationOutcome::Degraded
     } else {
         MigrationOutcome::Blocked
     };

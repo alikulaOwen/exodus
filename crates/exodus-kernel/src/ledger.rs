@@ -87,13 +87,21 @@ Rules:
     }
 
     /// Formats a user turn with deterministic cacheable structure.
-    pub fn format_prompt(&self, package_name: &str, archetype: &str, source_snippets: &[(&str, &str)]) -> String {
+    pub fn format_prompt(
+        &self,
+        package_name: &str,
+        archetype: &str,
+        source_snippets: &[(&str, &str)],
+    ) -> String {
         let mut out = format!(
             "Package: {}\nArchetype: {}\nFiles:\n",
             package_name, archetype
         );
         for (filename, content) in source_snippets {
-            out.push_str(&format!("\n--- BEGIN FILE: {} ---\n{}\n--- END FILE: {} ---\n", filename, content, filename));
+            out.push_str(&format!(
+                "\n--- BEGIN FILE: {} ---\n{}\n--- END FILE: {} ---\n",
+                filename, content, filename
+            ));
         }
         out
     }
@@ -106,8 +114,12 @@ mod tests {
     #[tokio::test]
     async fn test_append_only_session_ledger() {
         let ledger = SessionLedger::new("sess_123");
-        let step0 = ledger.append("INIT", serde_json::json!({"repo": "demo"})).await;
-        let step1 = ledger.append("WAVE_START", serde_json::json!({"wave": 0})).await;
+        let step0 = ledger
+            .append("INIT", serde_json::json!({"repo": "demo"}))
+            .await;
+        let step1 = ledger
+            .append("WAVE_START", serde_json::json!({"wave": 0}))
+            .await;
 
         assert_eq!(step0, 0);
         assert_eq!(step1, 1);

@@ -232,7 +232,11 @@ mod tests {
     #[tokio::test]
     async fn test_parallel_worker_wave_execution() {
         let temp = tempdir().unwrap();
-        let ctx = KernelContext::new(temp.path().to_path_buf(), temp.path().join("output"), "rust".to_string());
+        let ctx = KernelContext::new(
+            temp.path().to_path_buf(),
+            temp.path().join("output"),
+            "rust".to_string(),
+        );
         let pool = SubagentWorkerPool::new(2, Arc::new(BudgetGuard::unlimited()));
 
         let pkgs = vec![
@@ -283,7 +287,11 @@ mod tests {
     #[tokio::test]
     async fn test_worker_pool_budget_cancellation() {
         let temp = tempdir().unwrap();
-        let ctx = KernelContext::new(temp.path().to_path_buf(), temp.path().join("output"), "rust".to_string());
+        let ctx = KernelContext::new(
+            temp.path().to_path_buf(),
+            temp.path().join("output"),
+            "rust".to_string(),
+        );
         // Tiny budget ($0.00001) to force immediate budget trip
         let pool = SubagentWorkerPool::new(2, Arc::new(BudgetGuard::new(0.00001)));
 

@@ -1,12 +1,33 @@
 //! Tree-sitter Python parser and AST symbol extraction for Project Exodus.
 
 use exodus_core::{
-    Diagnostic, ExodusError, Language, Result, SourceEvidence, SourceLocation, SourceSpan,
+    Diagnostic, ExodusError, LanguageId, Result, SourceEvidence, SourceLocation, SourceSpan,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tree_sitter::{Node, Parser, Tree};
+
+pub mod universal;
+pub use universal::*;
+pub mod tree_sitter_adapter;
+pub use tree_sitter_adapter::*;
+
+/// Registers the three Phase 1 Tree-sitter adapters through one generic implementation.
+pub async fn register_builtin_source_adapters(
+    registry: &mut exodus_core::LanguageAdapterRegistry,
+) -> exodus_core::Result<()> {
+    registry
+        .register_source_adapter(std::sync::Arc::new(PythonSourceAdapter::new()))
+        .await?;
+    registry
+        .register_source_adapter(std::sync::Arc::new(TypeScriptSourceAdapter::new()))
+        .await?;
+    registry
+        .register_source_adapter(std::sync::Arc::new(GoSourceAdapter::new()))
+        .await?;
+    Ok(())
+}
 
 /// Extracted function or method parameter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,19 +156,38 @@ impl DeepResearchReport {
             self.total_modules, self.total_functions, self.total_classes, self.inferred_archetype
         );
         if !self.detected_frameworks.is_empty() {
-            out.push_str(&format!("   • Frameworks: {}\n", self.detected_frameworks.join(", ")));
+            out.push_str(&format!(
+                "   • Frameworks: {}\n",
+                self.detected_frameworks.join(", ")
+            ));
         }
         if !self.detected_routes.is_empty() {
-            out.push_str(&format!("   • HTTP Routes ({} detected):\n", self.detected_routes.len()));
+            out.push_str(&format!(
+                "   • HTTP Routes ({} detected):\n",
+                self.detected_routes.len()
+            ));
             for r in self.detected_routes.iter().take(4) {
-                out.push_str(&format!("      - [{}] {} -> `{}`\n", r.method, r.path, r.handler_name));
+                out.push_str(&format!(
+                    "      - [{}] {} -> `{}`\n",
+                    r.method, r.path, r.handler_name
+                ));
             }
         }
         if !self.detected_databases.is_empty() {
-            out.push_str(&format!("   • Database Drivers: {}\n", self.detected_databases.iter().map(|d| d.driver_or_orm.as_str()).collect::<Vec<_>>().join(", ")));
+            out.push_str(&format!(
+                "   • Database Drivers: {}\n",
+                self.detected_databases
+                    .iter()
+                    .map(|d| d.driver_or_orm.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
         if !self.detected_sdks.is_empty() {
-            out.push_str(&format!("   • External Cloud SDKs: {}\n", self.detected_sdks.join(", ")));
+            out.push_str(&format!(
+                "   • External Cloud SDKs: {}\n",
+                self.detected_sdks.join(", ")
+            ));
         }
         out
     }
@@ -178,14 +218,27 @@ impl ParsedRepository {
             // 1. Scan imports for frameworks and cloud SDKs
             for imp in &m.imports {
                 let mod_name = imp.module.to_lowercase();
-                if mod_name.contains("fastapi") || mod_name.contains("flask") || mod_name.contains("django") || mod_name.contains("axum") || mod_name.contains("express") {
-                    if !frameworks.contains(&imp.module) {
-                        frameworks.push(imp.module.clone());
-                    }
+                if (mod_name.contains("fastapi")
+                    || mod_name.contains("flask")
+                    || mod_name.contains("django")
+                    || mod_name.contains("axum")
+                    || mod_name.contains("express"))
+                    && !frameworks.contains(&imp.module)
+                {
+                    frameworks.push(imp.module.clone());
                 }
-                if mod_name.contains("sqlalchemy") || mod_name.contains("sqlite3") || mod_name.contains("psycopg") || mod_name.contains("sqlx") || mod_name.contains("diesel") || mod_name.contains("pymongo") {
+                if mod_name.contains("sqlalchemy")
+                    || mod_name.contains("sqlite3")
+                    || mod_name.contains("psycopg")
+                    || mod_name.contains("sqlx")
+                    || mod_name.contains("diesel")
+                    || mod_name.contains("pymongo")
+                {
                     let db_name = imp.module.clone();
-                    if !dbs.iter().any(|d: &DatabaseUsageEvidence| d.driver_or_orm == db_name) {
+                    if !dbs
+                        .iter()
+                        .any(|d: &DatabaseUsageEvidence| d.driver_or_orm == db_name)
+                    {
                         dbs.push(DatabaseUsageEvidence {
                             driver_or_orm: db_name,
                             has_raw_sql: false,
@@ -194,10 +247,14 @@ impl ParsedRepository {
                         });
                     }
                 }
-                if mod_name.contains("boto3") || mod_name.contains("redis") || mod_name.contains("celery") || mod_name.contains("requests") || mod_name.contains("httpx") {
-                    if !sdks.contains(&imp.module) {
-                        sdks.push(imp.module.clone());
-                    }
+                if (mod_name.contains("boto3")
+                    || mod_name.contains("redis")
+                    || mod_name.contains("celery")
+                    || mod_name.contains("requests")
+                    || mod_name.contains("httpx"))
+                    && !sdks.contains(&imp.module)
+                {
+                    sdks.push(imp.module.clone());
                 }
             }
 
@@ -205,9 +262,31 @@ impl ParsedRepository {
             for f in &m.functions {
                 for dec in &f.decorators {
                     let d_lower = dec.to_lowercase();
-                    if d_lower.contains(".get(") || d_lower.contains(".post(") || d_lower.contains(".put(") || d_lower.contains(".delete(") || d_lower.contains(".route(") {
-                        let method = if d_lower.contains(".get") { "GET" } else if d_lower.contains(".post") { "POST" } else if d_lower.contains(".put") { "PUT" } else if d_lower.contains(".delete") { "DELETE" } else { "HTTP" };
-                        let path = dec.split('(').nth(1).and_then(|s| s.split(')').next()).unwrap_or("/").trim_matches('\"').trim_matches('\'').to_string();
+                    if d_lower.contains(".get(")
+                        || d_lower.contains(".post(")
+                        || d_lower.contains(".put(")
+                        || d_lower.contains(".delete(")
+                        || d_lower.contains(".route(")
+                    {
+                        let method = if d_lower.contains(".get") {
+                            "GET"
+                        } else if d_lower.contains(".post") {
+                            "POST"
+                        } else if d_lower.contains(".put") {
+                            "PUT"
+                        } else if d_lower.contains(".delete") {
+                            "DELETE"
+                        } else {
+                            "HTTP"
+                        };
+                        let path = dec
+                            .split('(')
+                            .nth(1)
+                            .and_then(|s| s.split(')').next())
+                            .unwrap_or("/")
+                            .trim_matches('\"')
+                            .trim_matches('\'')
+                            .to_string();
                         routes.push(HttpRouteEvidence {
                             method: method.to_string(),
                             path,
@@ -219,12 +298,14 @@ impl ParsedRepository {
             }
         }
 
-        let inferred_archetype = if !routes.is_empty() || frameworks.iter().any(|f| f.to_lowercase().contains("fastapi") || f.to_lowercase().contains("flask")) {
+        let inferred_archetype = if !routes.is_empty()
+            || frameworks
+                .iter()
+                .any(|f| f.to_lowercase().contains("fastapi") || f.to_lowercase().contains("flask"))
+        {
             "BackendService".to_string()
         } else if sdks.iter().any(|s| s.to_lowercase().contains("celery")) {
             "WorkerQueue".to_string()
-        } else if total_cls == 0 && total_fns > 0 {
-            "SharedLibrary".to_string()
         } else {
             "SharedLibrary".to_string()
         };
@@ -244,7 +325,7 @@ impl ParsedRepository {
 
 /// Interface for source language parsers.
 pub trait SourceParser {
-    fn language(&self) -> Language;
+    fn language(&self) -> LanguageId;
     fn parse_source(&self, file_path: &Path, source_code: &str) -> Result<ParsedModule>;
     fn parse_repository(&self, repo_path: &Path) -> Result<ParsedRepository>;
 }
@@ -743,8 +824,8 @@ impl Default for PythonParser {
 }
 
 impl SourceParser for PythonParser {
-    fn language(&self) -> Language {
-        Language::Python
+    fn language(&self) -> LanguageId {
+        LanguageId::new("python")
     }
 
     fn parse_source(&self, file_path: &Path, source_code: &str) -> Result<ParsedModule> {
@@ -879,6 +960,7 @@ impl PythonParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use exodus_core::SourceLanguageAdapter;
 
     #[test]
     fn test_python_parse_function_and_class() {
@@ -967,5 +1049,116 @@ def dynamic_eval(expr: str):
             parsed.unsupported_constructs[0].construct_kind,
             "dynamic_code_execution"
         );
+    }
+
+    #[tokio::test]
+    async fn test_universal_source_adapter_python() {
+        let adapter = PythonSourceAdapter::new();
+        let code = r#"
+import os
+
+def calculate(x: int) -> int:
+    return x * 2
+
+class Worker:
+    def execute(self) -> None:
+        pass
+"#;
+        let (nodes, edges, _, _) = adapter
+            .parse_file(Path::new("."), Path::new("worker.py"), code)
+            .await
+            .unwrap();
+
+        assert!(nodes.iter().any(|n| n.name == "calculate"));
+        assert!(nodes.iter().any(|n| n.name == "Worker"));
+        assert!(edges
+            .iter()
+            .any(|e| e.relation == exodus_core::EsgRelation::Contains));
+    }
+
+    #[tokio::test]
+    async fn test_universal_source_adapter_typescript() {
+        let adapter = TypeScriptSourceAdapter::new();
+        let code = r#"
+import { Request } from 'express';
+
+export interface UserDTO {
+    id: string;
+    email: string;
+}
+
+export class UserService {
+    async function getUser(id: string) {
+        return { id };
+    }
+}
+"#;
+        let (nodes, edges, _, _) = adapter
+            .parse_file(Path::new("."), Path::new("user.ts"), code)
+            .await
+            .unwrap();
+
+        assert!(nodes.iter().any(|n| n.name == "UserDTO"));
+        assert!(nodes.iter().any(|n| n.name == "UserService"));
+        assert!(edges
+            .iter()
+            .any(|e| e.relation == exodus_core::EsgRelation::Imports));
+    }
+
+    #[tokio::test]
+    async fn test_universal_source_adapter_go() {
+        let adapter = GoSourceAdapter::new();
+        let code = r#"
+package service
+
+import "fmt"
+
+type Config struct {
+    Port int
+}
+
+func Start() error {
+    return nil
+}
+"#;
+        let (nodes, edges, _, _) = adapter
+            .parse_file(Path::new("."), Path::new("service.go"), code)
+            .await
+            .unwrap();
+
+        assert!(nodes.iter().any(|n| n.name == "Config"));
+        assert!(nodes.iter().any(|n| n.name == "Start"));
+        assert!(edges
+            .iter()
+            .any(|e| e.relation == exodus_core::EsgRelation::Contains));
+    }
+
+    #[tokio::test]
+    async fn test_universal_source_adapter_custom_grammar() {
+        let mut registry = GrammarRegistry::new();
+        let mut custom = LanguageGrammarSpec::new("elixir", &["ex", "exs"]);
+        custom.function_pattern = Some(r"def\s+([a-zA-Z_][a-zA-Z0-9_?!]*)\s*\(".into());
+        registry.register(custom);
+
+        let adapter = UniversalSourceAdapter::new().with_grammar_registry(registry);
+        let code = r#"
+def calculate(a, b) do
+  a + b
+end
+"#;
+        let (nodes, _, _, _) = adapter
+            .parse_file(Path::new("."), Path::new("math.ex"), code)
+            .await
+            .unwrap();
+
+        assert!(nodes.iter().any(|n| n.name == "calculate"));
+    }
+
+    #[tokio::test]
+    async fn test_register_builtin_universal_adapter() {
+        let mut registry = exodus_core::LanguageAdapterRegistry::new();
+        register_builtin_source_adapters(&mut registry)
+            .await
+            .unwrap();
     }
 }

@@ -38,7 +38,12 @@ impl PolicyGuard {
     }
 
     /// Authorize or reject an agent action on a given resource path.
-    pub async fn authorize(&self, role_id: &str, resource_path: &Path, action: PolicyAction) -> Result<()> {
+    pub async fn authorize(
+        &self,
+        role_id: &str,
+        resource_path: &Path,
+        action: PolicyAction,
+    ) -> Result<()> {
         let guard = self.active_policies.read().await;
         if let Some(policy) = guard.get(role_id) {
             match policy.evaluate(resource_path, action) {
@@ -54,14 +59,19 @@ impl PolicyGuard {
     }
 
     /// Fast synchronous evaluation when policy is locally cached.
-    pub fn evaluate_sync(&self, role_id: &str, resource_path: &Path, action: PolicyAction) -> Result<()> {
+    pub fn evaluate_sync(
+        &self,
+        role_id: &str,
+        resource_path: &Path,
+        action: PolicyAction,
+    ) -> Result<()> {
         if let Ok(guard) = self.active_policies.try_read() {
             if let Some(policy) = guard.get(role_id) {
                 match policy.evaluate(resource_path, action) {
                     PolicyDecision::Allow => Ok(()),
-                    PolicyDecision::Deny { reason } => Err(ExodusError::VerificationFailure(format!(
-                        "ABAC Policy Scope Violation for role `{role_id}`: {reason}"
-                    ))),
+                    PolicyDecision::Deny { reason } => Err(ExodusError::VerificationFailure(
+                        format!("ABAC Policy Scope Violation for role `{role_id}`: {reason}"),
+                    )),
                 }
             } else {
                 Ok(())
@@ -98,11 +108,27 @@ mod tests {
         guard.register_policy(devops_policy).await;
 
         // DevOps writing Dockerfile -> Allowed
-        assert!(guard.authorize("devops_sre_engineer", Path::new("Dockerfile"), PolicyAction::WriteFile).await.is_ok());
+        assert!(guard
+            .authorize(
+                "devops_sre_engineer",
+                Path::new("Dockerfile"),
+                PolicyAction::WriteFile
+            )
+            .await
+            .is_ok());
 
         // DevOps writing backend logic in src/api.rs -> Denied
-        let denied = guard.authorize("devops_sre_engineer", Path::new("src/api.rs"), PolicyAction::WriteFile).await;
+        let denied = guard
+            .authorize(
+                "devops_sre_engineer",
+                Path::new("src/api.rs"),
+                PolicyAction::WriteFile,
+            )
+            .await;
         assert!(denied.is_err());
-        assert!(denied.unwrap_err().to_string().contains("ABAC Policy Scope Violation"));
+        assert!(denied
+            .unwrap_err()
+            .to_string()
+            .contains("ABAC Policy Scope Violation"));
     }
 }

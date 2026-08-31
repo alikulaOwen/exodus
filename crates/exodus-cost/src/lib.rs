@@ -8,5 +8,7 @@ pub mod estimator;
 pub mod interruption;
 
 pub use budget::{BudgetError, BudgetGuard, MICRODOLLARS_PER_USD};
-pub use estimator::{CostEstimator, MigrationBudgetPreview, MigrationRiskBreakdown, ModelRoutingRule};
+pub use estimator::{
+    CostEstimator, MigrationBudgetPreview, MigrationRiskBreakdown, ModelRoutingRule,
+};
 pub use interruption::MigrationInterrupted;

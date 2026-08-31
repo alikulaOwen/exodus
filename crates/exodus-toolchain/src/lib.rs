@@ -158,7 +158,11 @@ impl ToolchainInspector {
             let raw_ver = ver_output.and_then(|out| {
                 let stdout = String::from_utf8_lossy(&out.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-                let combined = if stdout.trim().is_empty() { stderr } else { stdout };
+                let combined = if stdout.trim().is_empty() {
+                    stderr
+                } else {
+                    stdout
+                };
                 combined.lines().next().map(|s| s.trim().to_string())
             });
             (
@@ -226,7 +230,10 @@ impl ToolchainInspector {
         let mut all_required = true;
 
         for kind in kinds {
-            let is_req = matches!(kind, ToolKind::Git | ToolKind::Cargo | ToolKind::Rustc | ToolKind::Python);
+            let is_req = matches!(
+                kind,
+                ToolKind::Git | ToolKind::Cargo | ToolKind::Rustc | ToolKind::Python
+            );
             let info = Self::probe_tool(kind);
             if is_req && info.status != ToolStatus::Available {
                 all_required = false;

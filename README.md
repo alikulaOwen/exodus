@@ -97,9 +97,17 @@ exodus > /doctor                                     # Audit host toolchains (No
 exodus > /analyze fixtures/01_typed_functions        # Extract AST & build Exodus Semantic Graph (ESG)
 exodus > /plan fixtures/01_typed_functions           # Compute dependency waves & approval checkpoints
 exodus > /approve .exodus/plan.json                  # Review and approve migration plan
-exodus > /migrate fixtures/01_typed_functions --gated # Execute isolated worktree gated migration
-exodus > convert crates/exodus-fallback to zig       # Natural language multi-language conversion
-exodus > /exit                                       # Clean session exit (:q, exit, quit, Ctrl+C)
+### Step 5: Self-Hosting & Dogfooding (Using Exodus as its Own Test Case)
+Exodus can analyze and migrate its own workspace sub-crates as live test cases:
+```bash
+# Analyze an Exodus sub-crate
+./target/release/exodus /analyze crates/exodus-fallback
+
+# Plan migration for an Exodus sub-crate to Go or Zig
+./target/release/exodus /plan crates/exodus-fallback -t go
+
+# Execute migration of an Exodus sub-crate into an isolated target directory
+./target/release/exodus /migrate crates/exodus-fallback --to go --output target/exodus_dogfood_go
 ```
 
 ---
@@ -120,43 +128,14 @@ Project Exodus structures multi-agent coordination using strict role-based promp
 5. **Bounded Repair**: Maximum **3 iterations** per symbol before emitting fallback stubs.
 6. **Human Approval Gate**: Destructive actions, plan approvals, and cycle breaking require human authorization.
 
-### Agent Prompts & System Roles
-
-#### 1. Migration Agent (`exodus-agent::LlmMigrationEngine`)
-```text
-You are the Exodus Migration Agent specializing in translating legacy source code into modern, idiomatic target code.
-You must adhere strictly to:
-1. Idiomatic Target Design: Use standard idioms, pattern matching, error handling (Result/Option), and memory ownership.
-2. Grounded Semantics: Never guess or invent dummy logic for unsupported reflection. If a construct cannot be translated, emit an explicit fallback stub: todo!("Exodus Migration Debt: <reason>").
-3. Preserve Symbol Interfaces: Retain expected signatures and public entrypoints.
-```
-
-#### 2. Bounded Repair Agent (`exodus-agent::BoundedAgent`)
-```text
-You are the Exodus Bounded Repair Agent. Your goal is to fix compiler diagnostic errors reported by rustc.
-You have a strict maximum budget of 3 iterations.
-Input: Current source code + rustc JSON diagnostic errors.
-Output: Repaired source code addressing only the localized error without introducing regressions.
-```
-
 ---
 
-## 6. Solution Video Script (5 Minutes)
+## 6. Submission Deliverables & Directory Structure
 
-* **[0:00 - 0:45] Problem & The Intended User**: Introduce the challenge of migrating legacy codebases to Rust/Go/Zig. Demonstrate how naive LLM prompts fail on dependency cycles and dynamic reflection.
-* **[0:45 - 1:30] Baseline Failure Demonstration**: Show the unguided baseline failing on circular imports and dynamic `eval()`, producing broken code.
-* **[1:30 - 2:30] Project Exodus Architecture**: Walk through the 13-crate architecture: Tree-sitter parser $\to$ ESG semantic graph $\to$ Tarjan SCC cycle detector $\to$ Git worktree isolation $\to$ Bounded repair verifier $\to$ Governed Case Engine.
-* **[2:30 - 3:45] Live E2E Execution & Interactive Harness**: Run `./target/release/exodus`, demonstrate `/doctor` toolchain audit, wave planning with human approval prompt, gated worktree migration with atomic commits, and natural language translation (`convert exodus-fallback to zig`).
-* **[3:45 - 4:15] Improvement Changelog & Removed Experiment**: Review the progression from Baseline to Iteration 6. Highlight the experiment removed: trying to generate raw `unsafe` Rust for dynamic types was eliminated in favor of explicit typed fallback stubs.
-* **[4:15 - 5:00] Hot Take & Conclusion**: Close with the core thesis: metric honesty, worktree safety, and explicit migration debt deliver production-grade trust.
-
----
-
-## 7. Submission Deliverables & Directory Structure
-
-* **`crates/`**: 13 modular, production-tested Rust crates (`exodus-core`, `exodus-parser`, `exodus-graph`, `exodus-planner`, `exodus-agent`, `exodus-transform`, `exodus-fallback`, `exodus-verifier`, `exodus-case`, `exodus-worktree`, `exodus-eval`, `exodus-kernel`, `exodus-toolchain`, `exodus-cli`).
+* **`crates/`**: 19 modular, production-tested Rust crates (`exodus-core`, `exodus-parser`, `exodus-graph`, `exodus-planner`, `exodus-agent`, `exodus-transform`, `exodus-fallback`, `exodus-verifier`, `exodus-case`, `exodus-worktree`, `exodus-eval`, `exodus-kernel`, `exodus-toolchain`, `exodus-store`, `exodus-cost`, `exodus-cli`).
 * **`openwiki/`**: Complete Open Knowledge Format v0.2 wiki knowledge base (`openwiki/index.md`, `openwiki/human-approval-model.md`, `openwiki/user-and-migration-bottleneck.md`, etc.).
-* **`fixtures/`**: 11 synthetic and real-world legacy code fixtures with grounded contracts.
+* **`fixtures/`**: 11 synthetic and real-world legacy code fixtures with 100% grounded behavioral differential contracts.
 * **`REPRODUCTION.md`**: Clean environment reproduction guide.
 * **`VIDEO_SCRIPT.md`**: 5-minute storyboard and video walkthrough script.
 * **`TRAJECTORIES.md`**: Representative agent execution traces and tool interaction logs.
+
