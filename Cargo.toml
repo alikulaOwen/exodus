@@ -17,6 +17,7 @@ members = [
     "crates/exodus-store",
     "crates/exodus-toolchain",
     "crates/exodus-cli",
+    "crates/exodus-desktop",
 ]
 exclude = [
     "target",

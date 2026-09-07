@@ -3,25 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Project Exodus — Autonomous Code & Systems Workspace</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <title>Project Exodus — Enterprise Mission Control</title>
+  <link rel="stylesheet" href="./style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
   <div class="app-shell">
-    <!-- Navigation Header -->
+    <!-- Top Navigation Header -->
     <header class="top-nav">
       <div class="brand">
         <div class="brand-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+            <polyline points="2 17 12 22 22 17"></polyline>
+            <polyline points="2 12 12 17 22 12"></polyline>
           </svg>
         </div>
         <div class="brand-text">
           <span class="brand-title">EXODUS</span>
-          <span class="brand-subtitle">Autonomous Code & Systems Workspace</span>
+          <span class="brand-subtitle">Autonomous Code & Systems Workspace &bull; Native Desktop</span>
         </div>
       </div>
 
@@ -37,27 +39,26 @@
         </button>
       </nav>
 
-      <div class="header-actions">
-        <button id="btn-sdlc-settings" class="btn btn-secondary">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-          Settings
-        </button>
+      <!-- Action Controls & Status -->
+      <div class="header-status">
         <button id="btn-new-item" class="btn btn-primary">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           New Task
         </button>
+        <button id="btn-sdlc-settings" class="btn btn-secondary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          Settings
+        </button>
+        <div class="status-pill online">
+          <span class="pulse-dot"></span>
+          <span>SYSTEM READY</span>
+        </div>
       </div>
     </header>
 
     <!-- Tasks & Reviews View (Default) -->
     <div id="view-queue" class="main-view">
-      <!-- KPI Summary Bar -->
+      <!-- Domain Metrics Overview Grid -->
       <section class="kpi-grid">
         <div class="kpi-card" data-domain="#prod-bug">
           <div class="kpi-header">
@@ -87,7 +88,7 @@
         </div>
       </section>
 
-      <!-- Main Workspace Area -->
+      <!-- Main Workspace Layout -->
       <main class="workspace-layout">
         <!-- Left Column: Filterable Task Feed -->
         <aside class="feed-pane">
@@ -96,7 +97,6 @@
             <span class="feed-count" id="feed-count-badge">0 items</span>
           </div>
 
-          <!-- Filter Tabs -->
           <div class="domain-filters">
             <button class="filter-tab active" data-filter="all">All</button>
             <button class="filter-tab" data-filter="#prod-bug">Engineering</button>
@@ -144,7 +144,7 @@
                   View Graph (g)
                 </button>
                 <button id="btn-action-verify" class="btn btn-secondary">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                     <polyline points="22 4 12 14.01 9 11.01"></polyline>
                   </svg>
@@ -154,7 +154,7 @@
                   Reject
                 </button>
                 <button id="btn-action-approve" class="btn btn-primary-highlight">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="20 6 9 17 4 12"></polyline>
                   </svg>
                   Approve & Apply (a)
@@ -210,7 +210,7 @@
       </main>
     </div>
 
-    <!-- Change Graph View -->
+    <!-- Change Graph View (Interactive Visualizer) -->
     <div id="view-graph" class="main-view hidden">
       <div class="graph-layout">
         <div class="graph-header">
@@ -268,11 +268,11 @@
       </div>
     </div>
 
-    <!-- Modals -->
+    <!-- Modals (SDLC & Ingestion) -->
     <div id="modal-sdlc" class="modal-overlay hidden">
       <div class="modal-card">
         <div class="modal-header">
-          <h3>CI/CD Integration Settings</h3>
+          <h3>SDLC CI/CD Integration Settings</h3>
           <button id="btn-close-sdlc" class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
@@ -340,10 +340,10 @@
       </div>
     </div>
 
-    <!-- Toast Container -->
+    <!-- Toast Notification Container -->
     <div id="toast-container" class="toast-container"></div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="./desktop.js"></script>
 </body>
 </html>

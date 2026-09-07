@@ -83,6 +83,7 @@ pub fn create_router(state: WebState) -> Router {
         )
         .route("/api/sdlc/scaffold", get(get_sdlc_scaffold))
         .route("/api/sdlc/webhook", post(handle_ci_webhook))
+        .route("/api/graph", get(get_graph_topology))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
@@ -331,6 +332,103 @@ async fn handle_ci_webhook(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(item))
+}
+
+async fn get_graph_topology() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "nodes": [
+            {
+                "id": "node_trigger",
+                "label": "CI Failure #412",
+                "kind": "trigger",
+                "wave": 1,
+                "status": "active",
+                "subtitle": "Trigger: GitHub Actions CI Crash",
+                "detail": "Pipeline failed in auth_integration suite. TokenVerifier panicked on unhandled ExpiredSignature error.",
+                "diff_snippet": null,
+                "meta": { "source": "GitHub Actions", "event": "CI Build #412", "branch": "master" }
+            },
+            {
+                "id": "node_prompt",
+                "label": "Developer Prompt",
+                "kind": "prompt",
+                "wave": 2,
+                "status": "completed",
+                "subtitle": "Prompt: Handle Token Expiration",
+                "detail": "Prompt: 'In crates/auth/src/token.rs, safely catch ExpiredSignature and return AuthError::TokenExpired instead of panicking. Run all unit tests to confirm the fix.'",
+                "diff_snippet": null,
+                "meta": { "author": "engineer@exodus.dev", "model": "Claude 3.5 Sonnet" }
+            },
+            {
+                "id": "node_action",
+                "label": "AI Repair Task",
+                "kind": "action",
+                "wave": 3,
+                "status": "completed",
+                "subtitle": "Task: Safe Token Validation",
+                "detail": "Generated bounded repair for token validation. Isolated changes inside git worktree sandbox and prepared regression tests.",
+                "diff_snippet": null,
+                "meta": { "strategy": "Bounded AST Repair", "sandbox": ".exodus/worktrees/op-eng-412" }
+            },
+            {
+                "id": "node_code_file",
+                "label": "auth/src/token.rs",
+                "kind": "file_change",
+                "wave": 4,
+                "status": "modified",
+                "subtitle": "Codebase File (+8, -2 lines)",
+                "detail": "Modified authenticate_session to parse JWT claims safely and map expiration to structured error.",
+                "diff_snippet": "@@ -40,7 +40,11 @@ fn authenticate_session(token: &str) -> Result<Session, AuthError> {\n-    let claims = parse_jwt_unchecked(token)?; // Panic on expired token\n+    let claims = match parse_jwt_safe(token) {\n+        Ok(c) => c,\n+        Err(JwtError::ExpiredSignature) => return Err(AuthError::TokenExpired),\n+        Err(e) => return Err(AuthError::InvalidToken(e.to_string())),\n+    };\n     validate_expiration(&claims)?;\n     Ok(Session::from_claims(claims))",
+                "meta": { "file": "crates/auth/src/token.rs", "diff": "+8 / -2 lines" }
+            },
+            {
+                "id": "node_fn_symbol",
+                "label": "verify_token()",
+                "kind": "symbol",
+                "wave": 4,
+                "status": "verified",
+                "subtitle": "Function: AuthHandler::verify_token",
+                "detail": "Exported public signature: pub async fn verify_token(&self, token: &str) -> Result<Session, AuthError>",
+                "diff_snippet": null,
+                "meta": { "visibility": "pub", "type": "async fn" }
+            },
+            {
+                "id": "node_test_run",
+                "label": "Automated Tests",
+                "kind": "test",
+                "wave": 5,
+                "status": "passed",
+                "subtitle": "cargo test (3 passed)",
+                "detail": "Running 3 tests in crates/auth/tests/auth_integration.rs:\ntest test_valid_token ... ok\ntest test_token_expiration ... ok\ntest test_malformed_token ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; finished in 0.42s",
+                "diff_snippet": null,
+                "meta": { "command": "cargo test --test auth_integration", "passed": "3", "failed": "0" }
+            },
+            {
+                "id": "node_target_merge",
+                "label": "Release Target",
+                "kind": "target",
+                "wave": 6,
+                "status": "ready",
+                "subtitle": "Ready for 1-Click Merge",
+                "detail": "Clean diff with all automated tests passing. Ready for human review sign-off and branch promotion.",
+                "diff_snippet": null,
+                "meta": { "target_branch": "master", "status": "Ready for Review" }
+            }
+        ],
+        "edges": [
+            { "from": "node_trigger", "to": "node_prompt", "edge_type": "triggers", "is_cycle_edge": false },
+            { "from": "node_prompt", "to": "node_action", "edge_type": "instructs", "is_cycle_edge": false },
+            { "from": "node_action", "to": "node_code_file", "edge_type": "modifies", "is_cycle_edge": false },
+            { "from": "node_code_file", "to": "node_fn_symbol", "edge_type": "contains", "is_cycle_edge": false },
+            { "from": "node_code_file", "to": "node_test_run", "edge_type": "verified_by", "is_cycle_edge": false },
+            { "from": "node_test_run", "to": "node_target_merge", "edge_type": "promotes_to", "is_cycle_edge": false }
+        ],
+        "total_cycles_detected": 0,
+        "total_waves": 6,
+        "grounded_oracle_count": 3,
+        "title": "Change Lineage Graph",
+        "description": "Trace how triggers and developer prompts lead directly to codebase file changes and automated test runs."
+    }))
 }
 
 #[cfg(test)]

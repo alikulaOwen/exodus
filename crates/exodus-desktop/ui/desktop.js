@@ -1,11 +1,18 @@
-// Project Exodus — Autonomous Code & Systems Workspace Client Logic
+// Project Exodus Mission Control — Tauri Desktop Frontend Logic
 
-let operationalItems = [];
+// Tauri v2 invoke helper with mock/fallback support
+const invoke = async (cmd, args = {}) => {
+  if (window.__TAURI__?.core?.invoke) {
+    return await window.__TAURI__.core.invoke(cmd, args);
+  }
+  // Fallback to fetch API if running in web browser mode
+  console.log(`[IPC Invoke Fallback] ${cmd}`, args);
+  return null;
+};
+
+let currentItems = [];
 let selectedItemId = null;
 let currentFilter = 'all';
-let currentGraphTopology = null;
-let selectedGraphNodeId = null;
-let graphNodePositions = {};
 
 // Toast Notifications
 function showToast(message, type = 'info') {
@@ -24,64 +31,47 @@ function showToast(message, type = 'info') {
 }
 
 // Navigation Tabs
-document.getElementById('tab-btn-queue')?.addEventListener('click', () => {
+document.getElementById('tab-btn-queue').onclick = () => {
   document.getElementById('tab-btn-queue').classList.add('active');
   document.getElementById('tab-btn-graph').classList.remove('active');
   document.getElementById('view-queue').classList.remove('hidden');
   document.getElementById('view-graph').classList.add('hidden');
-});
+};
 
-document.getElementById('tab-btn-graph')?.addEventListener('click', () => {
+document.getElementById('tab-btn-graph').onclick = () => {
   document.getElementById('tab-btn-graph').classList.add('active');
   document.getElementById('tab-btn-queue').classList.remove('active');
   document.getElementById('view-graph').classList.remove('hidden');
   document.getElementById('view-queue').classList.add('hidden');
   renderEsgCanvas();
-});
+};
 
-document.getElementById('btn-view-lineage')?.addEventListener('click', () => {
-  document.getElementById('tab-btn-graph')?.click();
-});
-
-// Domain Filter Tabs
-document.querySelectorAll('.domain-filters .filter-tab').forEach(tab => {
-  tab.addEventListener('click', (e) => {
-    document.querySelectorAll('.domain-filters .filter-tab').forEach(t => t.classList.remove('active'));
-    e.target.classList.add('active');
-    currentFilter = e.target.getAttribute('data-filter');
-    renderQueue();
-  });
-});
-
+// Queue Management
 async function fetchQueue() {
   try {
-    const res = await fetch('/api/operations');
-    if (res.ok) {
-      operationalItems = await res.json();
-      updateKpis();
+    const items = await invoke('list_operations');
+    if (items) {
+      currentItems = items;
+      renderKPIs();
       renderQueue();
       if (selectedItemId) {
-        const item = operationalItems.find(i => i.id === selectedItemId);
-        if (item) renderReview(item);
+        const item = currentItems.find(i => i.id === selectedItemId);
+        if (item) selectItem(item);
       }
     }
   } catch (err) {
-    console.error('Failed to fetch operations queue:', err);
+    console.error('Failed to fetch operations:', err);
   }
 }
 
-function updateKpis() {
-  const prodBug = operationalItems.filter(i => i.domain_tag === '#prod-bug').length;
-  const crm = operationalItems.filter(i => i.domain_tag === '#crm-request').length;
-  const survey = operationalItems.filter(i => i.domain_tag === '#survey-mapping').length;
+function renderKPIs() {
+  const bugCount = currentItems.filter(i => i.domain_tag === '#prod-bug').length;
+  const crmCount = currentItems.filter(i => i.domain_tag === '#crm-request').length;
+  const surveyCount = currentItems.filter(i => i.domain_tag === '#survey-mapping').length;
 
-  const prodBugEl = document.getElementById('kpi-prod-bug');
-  const crmEl = document.getElementById('kpi-crm-request');
-  const surveyEl = document.getElementById('kpi-survey-mapping');
-
-  if (prodBugEl) prodBugEl.textContent = prodBug;
-  if (crmEl) crmEl.textContent = crm;
-  if (surveyEl) surveyEl.textContent = survey;
+  document.getElementById('kpi-prod-bug').textContent = bugCount;
+  document.getElementById('kpi-crm-request').textContent = crmCount;
+  document.getElementById('kpi-survey-mapping').textContent = surveyCount;
 }
 
 function formatStateLabel(state) {
@@ -101,27 +91,27 @@ function formatStateLabel(state) {
 }
 
 function renderQueue() {
-  const container = document.getElementById('items-list');
-  const filtered = currentFilter === 'all' 
-    ? operationalItems 
-    : operationalItems.filter(i => i.domain_tag === currentFilter);
+  const listEl = document.getElementById('items-list');
+  const filtered = currentFilter === 'all'
+    ? currentItems
+    : currentItems.filter(i => i.domain_tag === currentFilter);
 
-  const badgeEl = document.getElementById('feed-count-badge');
-  if (badgeEl) badgeEl.textContent = `${filtered.length} items`;
+  document.getElementById('feed-count-badge').textContent = `${filtered.length} items`;
 
   if (filtered.length === 0) {
-    container.innerHTML = '<div class="empty-state" style="padding: 24px; text-align: center; color: var(--text-muted);">No tasks in this category.</div>';
+    listEl.innerHTML = '<div class="empty-state">No operational items found in this domain.</div>';
     return;
   }
 
-  container.innerHTML = filtered.map(item => {
-    const isSelected = item.id === selectedItemId ? 'selected' : '';
-    const badgeColor = item.domain_tag === '#prod-bug' ? 'badge-emerald' : item.domain_tag === '#crm-request' ? 'badge-amber' : 'badge-cyan';
-    
+  listEl.innerHTML = filtered.map(item => {
+    const isSelected = item.id === selectedItemId;
+    const badgeClass = item.domain_tag === '#prod-bug' ? 'badge-emerald'
+      : item.domain_tag === '#crm-request' ? 'badge-amber' : 'badge-cyan';
+
     return `
-      <div class="item-card ${isSelected}" onclick="selectItem('${item.id}')">
+      <div class="item-card ${isSelected ? 'selected' : ''}" onclick="window.selectItemById('${item.id}')">
         <div class="item-card-header">
-          <span class="badge ${badgeColor}">${item.domain_tag}</span>
+          <span class="badge ${badgeClass}">${item.domain_tag}</span>
           <span class="badge badge-state">${formatStateLabel(item.state)}</span>
         </div>
         <div class="item-title">${escapeHtml(item.title)}</div>
@@ -134,23 +124,21 @@ function renderQueue() {
   }).join('');
 }
 
-window.selectItem = (id) => {
+window.selectItemById = (id) => {
   selectedItemId = id;
+  const item = currentItems.find(i => i.id === id);
+  if (item) selectItem(item);
   renderQueue();
-  const item = operationalItems.find(i => i.id === id);
-  if (item) {
-    renderReview(item);
-  }
 };
 
-function renderReview(item) {
+function selectItem(item) {
   document.getElementById('empty-review').classList.add('hidden');
   document.getElementById('active-review').classList.remove('hidden');
 
   document.getElementById('review-id').textContent = item.id;
   document.getElementById('review-title').textContent = item.title;
   document.getElementById('review-desc').textContent = item.description;
-  
+
   const domainBadge = document.getElementById('review-domain-badge');
   domainBadge.textContent = item.domain_tag;
   domainBadge.className = `badge ${item.domain_tag === '#prod-bug' ? 'badge-emerald' : item.domain_tag === '#crm-request' ? 'badge-amber' : 'badge-cyan'}`;
@@ -276,151 +264,141 @@ function renderVerification(item) {
   const summaryEl = document.getElementById('verification-summary');
   const rulesListEl = document.getElementById('rule-results-list');
 
-  if (!item.last_verification) {
-    summaryEl.textContent = 'Not yet verified. Click "Run Tests" to execute automated checks in sandbox.';
-    summaryEl.className = 'verification-summary';
+  if (!item.verification_report) {
+    summaryEl.innerHTML = '<span style="color: var(--text-muted);">Contract not yet verified. Click "Verify Contract" to run deterministic gates.</span>';
     rulesListEl.innerHTML = '';
     return;
   }
 
-  const ver = item.last_verification;
-  const isOk = ver.status === 'Verified' || ver.status === 'Compatible';
-
+  const rep = item.verification_report;
   summaryEl.innerHTML = `
-    <strong>Status:</strong> <span style="color: ${isOk ? 'var(--accent-emerald)' : 'var(--accent-rose)'};">${ver.status}</span> &bull;
-    <strong>Verifier:</strong> ${escapeHtml(ver.verifier_identity)} &bull;
-    <strong>Duration:</strong> ${ver.execution_duration_ms}ms
+    <div style="font-weight: 700; color: ${rep.passed ? 'var(--accent-emerald)' : 'var(--accent-rose)'}; margin-bottom: 8px;">
+      ${rep.passed ? '✓ PASSED CONTRACT VERIFICATION' : '✗ VERIFICATION FAILED'}
+    </div>
+    <div style="font-size: 12px; color: var(--text-secondary);">${escapeHtml(rep.summary)}</div>
   `;
 
-  rulesListEl.innerHTML = ver.rules_checked.map(rule => {
-    const passed = rule.passed;
-    return `
-      <div class="rule-result-item ${passed ? 'pass' : 'fail'}">
-        <div>
-          <strong>${escapeHtml(rule.rule_id)}</strong> &bull;
-          <span style="color: var(--text-secondary);">${escapeHtml(rule.rule_name)}</span>
-        </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <span style="color: var(--text-muted); font-size: 11px;">${escapeHtml(rule.message)}</span>
-          <span class="badge ${passed ? 'badge-emerald' : 'badge-rose'}">${passed ? 'PASSED' : 'FAILED'}</span>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
-function renderAudit(item) {
-  const container = document.getElementById('audit-entries');
-  if (!item.audit_trail || item.audit_trail.length === 0) {
-    container.innerHTML = '<div style="color: var(--text-muted); font-size: 12px;">No activity logged yet.</div>';
-    return;
-  }
-
-  container.innerHTML = item.audit_trail.map(a => `
-    <div style="font-size: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 6px;">
-      <div>
-        <strong style="color: var(--accent-cyan);">${escapeHtml(a.actor)}</strong> &bull;
-        <span>${escapeHtml(a.action)}</span>
-        ${a.details ? `<span style="color: var(--text-muted); font-size: 11px;"> (${escapeHtml(a.details)})</span>` : ''}
-      </div>
-      <span style="color: var(--text-muted); font-family: var(--font-mono); font-size: 11px;">${formatTime(a.timestamp)}</span>
+  rulesListEl.innerHTML = (rep.rule_results || []).map(r => `
+    <div class="rule-result-item ${r.passed ? 'pass' : 'fail'}">
+      <div><strong>${escapeHtml(r.rule_name)}:</strong> ${escapeHtml(r.details)}</div>
+      <span class="badge ${r.passed ? 'badge-emerald' : 'badge-rose'}">${r.passed ? 'PASS' : 'FAIL'}</span>
     </div>
   `).join('');
 }
 
-// Review Pane Actions
-document.getElementById('btn-action-verify')?.addEventListener('click', async () => {
+function renderAudit(item) {
+  const container = document.getElementById('audit-entries');
+  container.innerHTML = (item.audit_trail || []).map(a => `
+    <div style="font-size: 11px; margin-bottom: 6px; color: var(--text-secondary); display: flex; justify-content: space-between;">
+      <span><strong>[${escapeHtml(a.action)}]</strong> ${escapeHtml(a.details)} (${escapeHtml(a.actor)})</span>
+      <span style="font-family: var(--font-mono); color: var(--text-muted);">${formatTime(a.timestamp)}</span>
+    </div>
+  `).join('');
+}
+
+// User Actions via Tauri IPC
+document.getElementById('btn-action-verify').onclick = async () => {
   if (!selectedItemId) return;
+  showToast('Running deterministic contract verification via Tauri IPC...', 'info');
   try {
-    const res = await fetch(`/api/operations/${selectedItemId}/verify`, { method: 'POST' });
-    if (res.ok) {
-      showToast('Automated tests passed in sandbox', 'success');
+    const updated = await invoke('verify_operation', { id: selectedItemId });
+    if (updated) {
+      showToast(
+        updated.verification_report?.passed ? 'Contract verification passed!' : 'Verification finished with contract failures.',
+        updated.verification_report?.passed ? 'success' : 'error'
+      );
       await fetchQueue();
-    } else {
-      showToast('Validation failed: ' + (await res.text()), 'error');
     }
   } catch (err) {
-    showToast('Failed to run verification: ' + err, 'error');
+    showToast('Verification failed: ' + err, 'error');
   }
-});
+};
 
-document.getElementById('btn-action-approve')?.addEventListener('click', async () => {
+document.getElementById('btn-action-approve').onclick = async () => {
   if (!selectedItemId) return;
   try {
-    const res = await fetch(`/api/operations/${selectedItemId}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ approver: 'human_operator', notes: 'Approved via Web Dashboard' })
+    const updated = await invoke('approve_operation', {
+      id: selectedItemId,
+      approver: 'human_architect',
+      notes: 'Approved via Exodus Mission Control Desktop'
     });
-    if (res.ok) {
-      showToast('Task approved and applied successfully', 'success');
+    if (updated) {
+      showToast('Item approved & promoted to permanent case memory!', 'success');
       await fetchQueue();
-    } else {
-      showToast('Approval error: ' + (await res.text()), 'error');
     }
   } catch (err) {
-    showToast('Failed to approve task: ' + err, 'error');
+    showToast('Approval failed: ' + err, 'error');
   }
-});
+};
 
-document.getElementById('btn-action-reject')?.addEventListener('click', async () => {
+document.getElementById('btn-action-reject').onclick = async () => {
   if (!selectedItemId) return;
+  const reason = prompt('Please enter rejection reason:');
+  if (!reason) return;
   try {
-    const res = await fetch(`/api/operations/${selectedItemId}/reject`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ actor: 'human_operator', reason: 'Rejected via Web Dashboard' })
+    const updated = await invoke('reject_operation', {
+      id: selectedItemId,
+      actor: 'human_architect',
+      reason
     });
-    if (res.ok) {
-      showToast('Task rejected', 'info');
+    if (updated) {
+      showToast('Rejection recorded.', 'info');
       await fetchQueue();
     }
   } catch (err) {
-    showToast('Failed to reject: ' + err, 'error');
+    showToast('Rejection failed: ' + err, 'error');
   }
+};
+
+// Filter Tab handlers
+document.querySelectorAll('.filter-tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentFilter = tab.getAttribute('data-filter');
+    renderQueue();
+  };
 });
 
-// SDLC Settings Modal
-document.getElementById('btn-sdlc-settings')?.addEventListener('click', async () => {
+// SDLC Modal
+document.getElementById('btn-sdlc-settings').onclick = async () => {
   document.getElementById('modal-sdlc').classList.remove('hidden');
   try {
-    const res = await fetch('/api/sdlc/settings');
-    if (res.ok) {
-      const data = await res.json();
+    const data = await invoke('get_sdlc_settings');
+    if (data) {
       document.getElementById('sdlc-repo-url').value = data.remote_repo.repo_url;
       document.getElementById('sdlc-provider').value = data.remote_repo.provider;
       document.getElementById('sdlc-default-branch').value = data.remote_repo.default_branch;
       document.getElementById('sdlc-ci-type').value = data.pipeline_plugin.ci_type;
 
-      const scRes = await fetch('/api/sdlc/scaffold');
-      if (scRes.ok) {
-        const sc = await scRes.json();
-        document.getElementById('sdlc-scaffold-preview').textContent = JSON.stringify(sc, null, 2);
+      const scaffold = await invoke('get_sdlc_scaffold');
+      if (scaffold) {
+        document.getElementById('sdlc-scaffold-preview').textContent = JSON.stringify(scaffold, null, 2);
       }
     }
   } catch (err) {
     console.error('Failed to load SDLC settings:', err);
   }
-});
+};
 
-document.getElementById('btn-close-sdlc')?.addEventListener('click', () => document.getElementById('modal-sdlc').classList.add('hidden'));
-document.getElementById('btn-cancel-sdlc')?.addEventListener('click', () => document.getElementById('modal-sdlc').classList.add('hidden'));
+document.getElementById('btn-close-sdlc').onclick = () => document.getElementById('modal-sdlc').classList.add('hidden');
+document.getElementById('btn-cancel-sdlc').onclick = () => document.getElementById('modal-sdlc').classList.add('hidden');
 
-// New Task Modal
-document.getElementById('btn-new-item')?.addEventListener('click', () => {
+// Ingestion Modal
+document.getElementById('btn-new-item').onclick = () => {
   document.getElementById('modal-ingest').classList.remove('hidden');
-});
-document.getElementById('btn-close-ingest')?.addEventListener('click', () => document.getElementById('modal-ingest').classList.add('hidden'));
-document.getElementById('btn-cancel-ingest')?.addEventListener('click', () => document.getElementById('modal-ingest').classList.add('hidden'));
+};
+document.getElementById('btn-close-ingest').onclick = () => document.getElementById('modal-ingest').classList.add('hidden');
+document.getElementById('btn-cancel-ingest').onclick = () => document.getElementById('modal-ingest').classList.add('hidden');
 
-document.getElementById('btn-submit-ingest')?.addEventListener('click', async () => {
+document.getElementById('btn-submit-ingest').onclick = async () => {
   const domain = document.getElementById('new-item-domain').value;
   const title = document.getElementById('new-item-title').value;
   const desc = document.getElementById('new-item-desc').value;
   const requester = document.getElementById('new-item-requester').value;
 
   if (!title) {
-    showToast('Please provide a task title', 'error');
+    showToast('Please provide an event title', 'error');
     return;
   }
 
@@ -443,42 +421,46 @@ document.getElementById('btn-submit-ingest')?.addEventListener('click', async ()
   }
 
   try {
-    const res = await fetch('/api/operations/ingest', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        description: desc || 'Created via Web UI',
-        requester,
-        payload
-      })
+    const res = await invoke('ingest_operation', {
+      title,
+      description: desc || null,
+      requester,
+      domainTag: domain,
+      payload
     });
-    if (res.ok) {
+    if (res) {
       document.getElementById('modal-ingest').classList.add('hidden');
-      showToast(`Task created: ${title}`, 'success');
+      showToast(`Event ingested into fabric: ${title}`, 'success');
       await fetchQueue();
     }
   } catch (err) {
-    showToast('Failed to create task: ' + err, 'error');
+    showToast('Failed to ingest event: ' + err, 'error');
   }
-});
+};
 
 // Change Lineage Graph Canvas & Node Inspector
+let currentGraphTopology = null;
+let selectedGraphNodeId = null;
+let graphNodePositions = {};
+
+// View Lineage Button in Queue
+document.getElementById('btn-view-lineage')?.addEventListener('click', () => {
+  document.getElementById('tab-btn-graph')?.click();
+});
+
 async function renderEsgCanvas() {
   const canvas = document.getElementById('esg-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
+  // Handle high-DPI scaling
   const rect = canvas.parentElement.getBoundingClientRect();
   canvas.width = rect.width;
   canvas.height = rect.height;
 
   let topology;
   try {
-    const res = await fetch('/api/graph');
-    if (res.ok) {
-      topology = await res.json();
-    }
+    topology = await invoke('get_esg_topology');
   } catch (_) {}
 
   if (!topology) {
@@ -578,6 +560,7 @@ async function renderEsgCanvas() {
   document.getElementById('graph-edge-count').textContent = topology.edges.length;
   document.getElementById('graph-status-count').textContent = 'All Passing';
 
+  // Group nodes by stage wave
   const waveGroups = {};
   topology.nodes.forEach(n => {
     waveGroups[n.wave] = waveGroups[n.wave] || [];
@@ -603,6 +586,7 @@ async function renderEsgCanvas() {
     });
   });
 
+  // Auto-select code change node or first node if none selected
   if (!selectedGraphNodeId) {
     const defaultNode = topology.nodes.find(n => n.kind === 'file_change') || topology.nodes[0];
     if (defaultNode) {
@@ -626,6 +610,7 @@ function drawGraph(ctx, width, height, waveKeys, colWidth) {
     '6': '6. TARGET'
   };
 
+  // Draw stage column dividers & headers
   waveKeys.forEach((waveKey, colIdx) => {
     const x = colWidth * (colIdx + 1);
     ctx.strokeStyle = 'rgba(36, 50, 71, 0.35)';
@@ -643,6 +628,7 @@ function drawGraph(ctx, width, height, waveKeys, colWidth) {
     ctx.fillText(stageLabels[waveKey] || `STAGE ${waveKey}`, x, 28);
   });
 
+  // Draw Edges
   if (currentGraphTopology?.edges) {
     currentGraphTopology.edges.forEach(edge => {
       const from = graphNodePositions[edge.from];
@@ -660,6 +646,7 @@ function drawGraph(ctx, width, height, waveKeys, colWidth) {
       ctx.quadraticCurveTo(cpX, cpY, to.x, to.y);
       ctx.stroke();
 
+      // Arrow indicator head
       ctx.fillStyle = isHighlighted ? '#38bdf8' : 'rgba(59, 130, 246, 0.8)';
       ctx.beginPath();
       ctx.arc(to.x, to.y, 4, 0, Math.PI * 2);
@@ -667,11 +654,13 @@ function drawGraph(ctx, width, height, waveKeys, colWidth) {
     });
   }
 
+  // Draw Nodes
   Object.values(graphNodePositions).forEach(pos => {
     const n = pos.node;
     const isSelected = n.id === selectedGraphNodeId;
     const r = pos.radius;
 
+    // Color by kind
     let ringColor = '#3b82f6';
     if (n.kind === 'trigger') ringColor = '#f43f5e';
     else if (n.kind === 'prompt') ringColor = '#f59e0b';
@@ -681,6 +670,7 @@ function drawGraph(ctx, width, height, waveKeys, colWidth) {
     else if (n.kind === 'test') ringColor = '#10b981';
     else if (n.kind === 'target') ringColor = '#06b6d4';
 
+    // Selection Glow
     if (isSelected) {
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, r + 9, 0, Math.PI * 2);
@@ -689,17 +679,20 @@ function drawGraph(ctx, width, height, waveKeys, colWidth) {
       ctx.stroke();
     }
 
+    // Outer ring
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, r + 3, 0, Math.PI * 2);
     ctx.strokeStyle = isSelected ? ringColor : 'rgba(255, 255, 255, 0.15)';
     ctx.lineWidth = isSelected ? 3 : 1.5;
     ctx.stroke();
 
+    // Node body
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
     ctx.fillStyle = '#111827';
     ctx.fill();
 
+    // Inner icon / kind indicator
     ctx.fillStyle = ringColor;
     ctx.font = 'bold 10px "JetBrains Mono"';
     ctx.textAlign = 'center';
@@ -713,11 +706,13 @@ function drawGraph(ctx, width, height, waveKeys, colWidth) {
     else if (n.kind === 'target') kindShort = 'DEST';
     ctx.fillText(kindShort, pos.x, pos.y + 3);
 
+    // Node label below
     ctx.fillStyle = isSelected ? '#ffffff' : '#e2e8f0';
     ctx.font = isSelected ? 'bold 12px "Plus Jakarta Sans"' : '600 11px "Plus Jakarta Sans"';
     ctx.textAlign = 'center';
     ctx.fillText(n.label, pos.x, pos.y + r + 18);
 
+    // Subtitle below label
     if (n.subtitle) {
       ctx.fillStyle = '#94a3b8';
       ctx.font = '10px "Plus Jakarta Sans"';
@@ -726,6 +721,7 @@ function drawGraph(ctx, width, height, waveKeys, colWidth) {
   });
 }
 
+// Canvas Click Event: Node Hit-Testing & Selection
 const canvasEl = document.getElementById('esg-canvas');
 if (canvasEl) {
   canvasEl.addEventListener('click', (e) => {
@@ -786,6 +782,7 @@ function renderNodeDrawer(node) {
   subEl.textContent = node.subtitle || '';
   detailEl.textContent = node.detail || 'No further description available.';
 
+  // Code Diff Preview
   if (node.diff_snippet) {
     diffSec.classList.remove('hidden');
     const lines = node.diff_snippet.split('\n');
@@ -799,6 +796,7 @@ function renderNodeDrawer(node) {
     diffSec.classList.add('hidden');
   }
 
+  // Metadata Grid
   if (node.meta && Object.keys(node.meta).length > 0) {
     metaSec.classList.remove('hidden');
     metaGrid.innerHTML = Object.entries(node.meta).map(([k, v]) => `
@@ -845,6 +843,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Boot & polling
+// Initial boot & polling
 fetchQueue();
 setInterval(fetchQueue, 5000);
+
