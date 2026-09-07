@@ -221,6 +221,10 @@ enum Commands {
         /// Output directory for evaluation artifacts
         #[arg(short, long, default_value = ".exodus")]
         output: PathBuf,
+
+        /// Run benchmark fixtures (optional compatibility flag)
+        #[arg(long)]
+        benchmarks: bool,
     },
     /// Run live demonstration flows
     #[command(subcommand)]
@@ -1368,7 +1372,9 @@ async fn main() -> anyhow::Result<()> {
             }
             println!("============================================================");
         }
-        Some(Commands::Eval { fixtures, output }) => {
+        Some(Commands::Eval {
+            fixtures, output, ..
+        }) => {
             println!(
                 "🏆 Running Project Exodus Benchmark Suite on `{}`...",
                 fixtures.display()
