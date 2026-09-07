@@ -10,6 +10,7 @@ use exodus_core::{
 };
 
 /// Synthesizes grounded behavioral contracts from AST and ESG symbols.
+#[derive(Default)]
 pub struct ContractSynthesizer;
 
 impl ContractSynthesizer {
@@ -242,7 +243,6 @@ impl ContractSynthesizer {
                     .replace("self", "&self")
                     .replace(": int", ": i64")
                     .replace(": str", ": &str")
-                    .replace(": bool", ": bool")
                     .replace(" -> None:", "")
                     .replace(':', " {");
                 if !replaced.contains("pub fn ") && !replaced.contains("pub struct ") {
@@ -268,9 +268,8 @@ impl ContractSynthesizer {
             "zig" => {
                 let replaced = source_sig
                     .replace("def ", "pub fn ")
-                    .replace(": int", ": i64")
-                    .replace(": str", ": []const u8")
-                    .replace(": bool", ": bool")
+                    .replace(": int", " i64")
+                    .replace(": str", " []const u8")
                     .replace(" -> None:", " void")
                     .replace(':', " {");
                 if !replaced.contains("pub fn ") {
@@ -325,7 +324,7 @@ impl ContractSynthesizer {
         let mut test_cases = Vec::new();
 
         for assertion in &contract.assertions {
-            let safe_case = assertion.case_id.replace('-', "_").replace('.', "_");
+            let safe_case = assertion.case_id.replace(['-', '.'], "_");
             let case_code = spec
                 .test_case_template
                 .replace("{{case_id}}", &safe_case)

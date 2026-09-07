@@ -1126,14 +1126,18 @@ impl OperationalStore for SurrealGraphStore {
         &self,
         domain: OperationalDomainTag,
     ) -> Result<Vec<OperationalItem>> {
-        self.operational_backend.list_operational_items_by_domain(domain).await
+        self.operational_backend
+            .list_operational_items_by_domain(domain)
+            .await
     }
 
     async fn list_operational_items_by_state(
         &self,
         state: OperationalLifecycleState,
     ) -> Result<Vec<OperationalItem>> {
-        self.operational_backend.list_operational_items_by_state(state).await
+        self.operational_backend
+            .list_operational_items_by_state(state)
+            .await
     }
 
     async fn save_crm_account(&mut self, account: &CrmAccountRecord) -> Result<()> {
@@ -1180,7 +1184,9 @@ impl OperationalStore for SurrealGraphStore {
     }
 
     async fn save_survey_feedback(&mut self, feedback: &SurveyFeedbackRecord) -> Result<()> {
-        self.operational_backend.save_survey_feedback(feedback).await
+        self.operational_backend
+            .save_survey_feedback(feedback)
+            .await
     }
 
     async fn list_survey_feedbacks(&self) -> Result<Vec<SurveyFeedbackRecord>> {
@@ -1191,7 +1197,9 @@ impl OperationalStore for SurrealGraphStore {
         &self,
         feedback_text: &str,
     ) -> Result<Option<(TaxonomyNodeRecord, f64)>> {
-        self.operational_backend.match_feedback_to_taxonomy(feedback_text).await
+        self.operational_backend
+            .match_feedback_to_taxonomy(feedback_text)
+            .await
     }
 
     async fn get_sdlc_settings(&self) -> Result<SdlcIntegrationSettings> {
@@ -1203,11 +1211,18 @@ impl OperationalStore for SurrealGraphStore {
     }
 
     async fn generate_pipeline_plugin_scaffold(&self) -> Result<HashMap<String, String>> {
-        self.operational_backend.generate_pipeline_plugin_scaffold().await
+        self.operational_backend
+            .generate_pipeline_plugin_scaffold()
+            .await
     }
 
-    async fn ingest_ci_failure_event(&mut self, event: CiFailureEventPayload) -> Result<OperationalItem> {
-        self.operational_backend.ingest_ci_failure_event(event).await
+    async fn ingest_ci_failure_event(
+        &mut self,
+        event: CiFailureEventPayload,
+    ) -> Result<OperationalItem> {
+        self.operational_backend
+            .ingest_ci_failure_event(event)
+            .await
     }
 }
 
@@ -1314,7 +1329,10 @@ mod tests {
         assert_eq!(loaded.unwrap().domain_tag, OperationalDomainTag::CrmRequest);
 
         // Verify CRM policy evaluation through SurrealGraphStore
-        let eval = store.evaluate_crm_discount("acc-enterprise-99", 20.0, "SalesLead").await.unwrap();
+        let eval = store
+            .evaluate_crm_discount("acc-enterprise-99", 20.0, "SalesLead")
+            .await
+            .unwrap();
         assert!(eval.compliant);
 
         // Verify SDLC scaffolding through SurrealGraphStore
@@ -1322,4 +1340,3 @@ mod tests {
         assert!(scaffold.contains_key(".github/workflows/exodus-verify.yml"));
     }
 }
-

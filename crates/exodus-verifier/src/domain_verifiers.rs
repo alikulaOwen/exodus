@@ -6,8 +6,8 @@
 //! - `#survey-mapping`: Product taxonomy completeness, foreign key validation, and unmapped key checks.
 
 use exodus_core::{
-    ContractVerificationReport, CrmRequestPayload, DomainPayload, MigrationDebt,
-    OperationalItem, ProdBugPayload, Result, RuleVerificationResult, SurveyMappingPayload,
+    ContractVerificationReport, CrmRequestPayload, DomainPayload, MigrationDebt, OperationalItem,
+    ProdBugPayload, Result, RuleVerificationResult, SurveyMappingPayload,
 };
 use exodus_store::OperationalStore;
 use std::path::Path;
@@ -55,7 +55,10 @@ impl ProdBugVerifier {
                 passed: true,
                 details: "No reproduction command provided; syntax verified".to_string(),
             });
-            return ContractVerificationReport::success("Reproduction command omitted; validated", rules);
+            return ContractVerificationReport::success(
+                "Reproduction command omitted; validated",
+                rules,
+            );
         }
 
         let program = parts[0];
@@ -80,17 +83,26 @@ impl ProdBugVerifier {
                 rules.push(RuleVerificationResult {
                     rule_name: "test_harness_execution".to_string(),
                     passed,
-                    details: format!("Command '{}' exited with {}: {}", test_cmd, output.status, summary_output),
+                    details: format!(
+                        "Command '{}' exited with {}: {}",
+                        test_cmd, output.status, summary_output
+                    ),
                 });
 
                 if passed {
                     ContractVerificationReport::success(
-                        format!("Deterministic test harness passed with exit code 0: {}", test_cmd),
+                        format!(
+                            "Deterministic test harness passed with exit code 0: {}",
+                            test_cmd
+                        ),
                         rules,
                     )
                 } else {
                     ContractVerificationReport::failure(
-                        format!("Compiler / test failure under '{}': {}", test_cmd, summary_output),
+                        format!(
+                            "Compiler / test failure under '{}': {}",
+                            test_cmd, summary_output
+                        ),
                         rules,
                     )
                 }
@@ -237,7 +249,10 @@ impl SurveyTaxonomyVerifier {
 
         for resp in &payload.responses {
             if let Some(target_node_id) = &resp.candidate_taxonomy_node {
-                let node = store.get_taxonomy_node(target_node_id).await.unwrap_or(None);
+                let node = store
+                    .get_taxonomy_node(target_node_id)
+                    .await
+                    .unwrap_or(None);
                 if node.is_some() {
                     valid_fk_count += 1;
                 } else {
@@ -318,9 +333,7 @@ impl MultiDomainVerifier {
             DomainPayload::ProdBug(payload) => {
                 ProdBugVerifier::verify(payload, worktree_path).await
             }
-            DomainPayload::CrmRequest(payload) => {
-                CrmPolicyVerifier::verify(payload, store).await
-            }
+            DomainPayload::CrmRequest(payload) => CrmPolicyVerifier::verify(payload, store).await,
             DomainPayload::SurveyMapping(payload) => {
                 SurveyTaxonomyVerifier::verify(payload, store).await
             }
@@ -430,9 +443,12 @@ mod tests {
         ));
 
         let mut item = OperationalItem::new("Discount for Mega", "Desc", "agent", payload);
-        item.mark_sandboxed("sandbox-agent", "in-memory-tx").unwrap();
+        item.mark_sandboxed("sandbox-agent", "in-memory-tx")
+            .unwrap();
 
-        let report = MultiDomainVerifier::verify_item(&mut item, &store, None).await.unwrap();
+        let report = MultiDomainVerifier::verify_item(&mut item, &store, None)
+            .await
+            .unwrap();
         assert!(report.passed);
         assert_eq!(item.state, OperationalLifecycleState::ContractVerified);
     }

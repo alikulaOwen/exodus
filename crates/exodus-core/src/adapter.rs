@@ -118,7 +118,12 @@ pub struct SignatureRuleSet {
 
 impl SignatureRuleSet {
     pub fn validate(&self) -> Result<()> {
-        for placeholder in ["{{function_keyword}}", "{{name}}", "{{parameters}}", "{{return_type}}"] {
+        for placeholder in [
+            "{{function_keyword}}",
+            "{{name}}",
+            "{{parameters}}",
+            "{{return_type}}",
+        ] {
             if !self.signature_template.contains(placeholder) {
                 return Err(crate::ExodusError::Generic(format!(
                     "signature rule {} -> {} is missing required placeholder {placeholder}",
@@ -480,7 +485,8 @@ impl TargetLanguageSpecRecord {
                 source_language: LanguageId::new("python"),
                 target_language: LanguageId::new("rust"),
                 function_keyword: "pub fn".to_string(),
-                signature_template: "{{function_keyword}} {{name}}({{parameters}}){{return_type}}".to_string(),
+                signature_template: "{{function_keyword}} {{name}}({{parameters}}){{return_type}}"
+                    .to_string(),
                 receiver: ReceiverRule {
                     instance_template: "&self".to_string(),
                     mutable_instance_template: Some("&mut self".to_string()),
@@ -518,7 +524,8 @@ impl TargetLanguageSpecRecord {
                 source_language: LanguageId::new("typescript"),
                 target_language: LanguageId::new("go"),
                 function_keyword: "func".to_string(),
-                signature_template: "{{function_keyword}} {{name}}({{parameters}}){{return_type}}".to_string(),
+                signature_template: "{{function_keyword}} {{name}}({{parameters}}){{return_type}}"
+                    .to_string(),
                 receiver: ReceiverRule {
                     instance_template: "receiver any".to_string(),
                     mutable_instance_template: None,

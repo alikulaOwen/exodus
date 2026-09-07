@@ -21,7 +21,13 @@ pub use gemini_provider::*;
 
 /// Live progress and thought observer trait for real-time terminal and harness visibility.
 pub trait AgentLiveObserver: Send + Sync {
-    fn on_repair_attempt_started(&self, symbol_id: &str, target_lang: &str, attempt: usize, max_attempts: usize);
+    fn on_repair_attempt_started(
+        &self,
+        symbol_id: &str,
+        target_lang: &str,
+        attempt: usize,
+        max_attempts: usize,
+    );
     fn on_diagnostic_analyzed(&self, summary: &str);
     fn on_model_response_received(&self, provider_name: &str, duration_ms: u64, code_len: usize);
     fn on_verification_feedback(&self, passed: bool, message: &str);
@@ -32,7 +38,13 @@ pub trait AgentLiveObserver: Send + Sync {
 pub struct ConsoleLiveObserver;
 
 impl AgentLiveObserver for ConsoleLiveObserver {
-    fn on_repair_attempt_started(&self, symbol_id: &str, target_lang: &str, attempt: usize, max_attempts: usize) {
+    fn on_repair_attempt_started(
+        &self,
+        symbol_id: &str,
+        target_lang: &str,
+        attempt: usize,
+        max_attempts: usize,
+    ) {
         println!("🤖 [Agent Repair] Attempt {attempt}/{max_attempts} on symbol `{symbol_id}` ({target_lang})...");
     }
 
@@ -974,7 +986,11 @@ impl<P: AgentProvider> BoundedAgent<P> {
                         obs.on_model_response_received(
                             self.provider.provider_name(),
                             response.duration_ms,
-                            response.proposed_code.as_ref().map(|c| c.len()).unwrap_or(0),
+                            response
+                                .proposed_code
+                                .as_ref()
+                                .map(|c| c.len())
+                                .unwrap_or(0),
                         );
                     }
 
@@ -983,7 +999,10 @@ impl<P: AgentProvider> BoundedAgent<P> {
                         // In a mock/real workflow, if repair succeeds:
                         if !current_code.contains("error") {
                             if let Some(ref obs) = self.observer {
-                                obs.on_verification_feedback(true, &format!("Symbol `{symbol_id}` repaired cleanly"));
+                                obs.on_verification_feedback(
+                                    true,
+                                    &format!("Symbol `{symbol_id}` repaired cleanly"),
+                                );
                             }
                             return (current_code, MigrationOutcome::Compatible, None);
                         }

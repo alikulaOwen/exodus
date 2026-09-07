@@ -8,6 +8,7 @@ use exodus_eval::Evaluator;
 use exodus_graph::SemanticGraph;
 use exodus_parser::{PythonParser, SourceParser};
 use exodus_planner::{MigrationPlan, MigrationPlanner};
+use exodus_store::OperationalStore;
 use exodus_store::TargetLanguageCatalog;
 use exodus_transform::TransformationEngine;
 use exodus_verifier::{
@@ -15,6 +16,9 @@ use exodus_verifier::{
     UniversalTargetVerifier, Verifier,
 };
 use exodus_worktree::WorktreeManager;
+
+pub mod web;
+
 use std::fs;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
@@ -252,6 +256,70 @@ enum Commands {
     /// Manage target language ecosystems, template specifications, and dynamic toolchain profiles
     #[command(subcommand)]
     Languages(LanguagesCommands),
+    /// Launch the embedded Universal Human-In-The-Loop (HITL) Gate Web UI
+    Serve {
+        /// HTTP server bind host
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        /// HTTP server bind port
+        #[arg(short, long, default_value = "8080")]
+        port: u16,
+    },
+    /// Manage cross-functional operational items (#prod-bug, #crm-request, #survey-mapping)
+    #[command(subcommand)]
+    Op(OpCommands),
+}
+
+#[derive(Subcommand)]
+enum OpCommands {
+    /// List all operational items across domains
+    List {
+        #[arg(short, long)]
+        domain: Option<String>,
+    },
+    /// Inspect details of an operational item
+    Show { id: String },
+    /// Run deterministic verification on an operational item
+    Verify { id: String },
+    /// Approve an operational item and promote it to memory
+    Approve {
+        id: String,
+        #[arg(short, long, default_value = "LeadArchitect")]
+        approver: String,
+        #[arg(short, long)]
+        notes: Option<String>,
+    },
+    /// Reject an operational item
+    Reject {
+        id: String,
+        #[arg(short, long)]
+        reason: String,
+    },
+    /// Generate or inspect SDLC CI/CD pipeline scaffold
+    Sdlc {
+        #[arg(short, long)]
+        write: bool,
+    },
+    /// Ingest a new operational event item into the execution fabric
+    Ingest {
+        #[arg(short, long)]
+        domain: String,
+        #[arg(short, long)]
+        title: String,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(short, long, default_value = "cli_operator")]
+        requester: String,
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+    },
+    /// Promote an approved operational item to permanent structural case memory
+    Promote {
+        id: String,
+        #[arg(long, default_value = ".exodus")]
+        storage_dir: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1836,12 +1904,14 @@ async fn main() -> anyhow::Result<()> {
                             let mut fixture_paths = Vec::new();
 
                             for c in &promoted {
-                                let fix_res = if let Some(ref path_str) = c.regression_fixture_path {
+                                let fix_res = if let Some(ref path_str) = c.regression_fixture_path
+                                {
                                     let p = PathBuf::from(path_str);
                                     if p.exists() {
                                         Ok(p)
                                     } else {
-                                        engine.generate_regression_fixture(&c.case_id, &fixtures_dir)
+                                        engine
+                                            .generate_regression_fixture(&c.case_id, &fixtures_dir)
                                     }
                                 } else {
                                     engine.generate_regression_fixture(&c.case_id, &fixtures_dir)
@@ -2475,8 +2545,241 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+        Some(Commands::Serve { host, port }) => {
+            let storage_path = std::path::PathBuf::from(".exodus/fabric_store.json");
+            let store = exodus_store::EmbeddedOperationalStore::load_or_init(&storage_path).await?;
+            web::start_server(store, &host, port).await?;
+        }
+        Some(Commands::Op(sub)) => {
+            handle_op_commands(sub, cli.json).await?;
+        }
     }
 
+    Ok(())
+}
+
+async fn handle_op_commands(cmd: OpCommands, json_output: bool) -> anyhow::Result<()> {
+    let storage_path = std::path::PathBuf::from(".exodus/fabric_store.json");
+    let mut store = exodus_store::EmbeddedOperationalStore::load_or_init(&storage_path).await?;
+
+    match cmd {
+        OpCommands::List { domain } => {
+            let items = if let Some(tag_str) = domain {
+                let tag: exodus_core::OperationalDomainTag =
+                    tag_str.parse().map_err(|e| anyhow::anyhow!("{}", e))?;
+                store.list_operational_items_by_domain(tag).await?
+            } else {
+                store.list_operational_items().await?
+            };
+
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&items)?);
+            } else {
+                println!("==================================================================");
+                println!(
+                    "  PROJECT EXODUS — OPERATIONAL QUEUE ({} items)",
+                    items.len()
+                );
+                println!("==================================================================");
+                for item in items {
+                    println!(
+                        "[{}] {} | {} ({})",
+                        item.domain_tag, item.id, item.title, item.state
+                    );
+                }
+            }
+        }
+        OpCommands::Show { id } => {
+            let item = store.get_operational_item(&id).await?;
+            if let Some(i) = item {
+                if json_output {
+                    println!("{}", serde_json::to_string_pretty(&i)?);
+                } else {
+                    println!("Item: {} [{}]", i.id, i.domain_tag);
+                    println!("Title: {}", i.title);
+                    println!("State: {}", i.state);
+                    println!("Description: {}", i.description);
+                    if let Some(rep) = i.verification_report {
+                        println!("Verification: {}", rep.summary);
+                    }
+                }
+            } else {
+                eprintln!("Operational item '{}' not found", id);
+            }
+        }
+        OpCommands::Verify { id } => {
+            let item_opt = store.get_operational_item(&id).await?;
+            if let Some(mut item) = item_opt {
+                if item.state == exodus_core::OperationalLifecycleState::Captured {
+                    item.mark_sandboxed("cli-operator", &format!(".exodus/worktrees/{}", item.id))?;
+                }
+                let cloned_store = store.clone();
+                let report = exodus_verifier::MultiDomainVerifier::verify_item(
+                    &mut item,
+                    &cloned_store,
+                    None,
+                )
+                .await?;
+                store.save_operational_item(&item).await?;
+                let _ = store.persist_to_disk(&storage_path).await;
+                if json_output {
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                } else {
+                    println!(
+                        "Verification report: passed={}, state={}",
+                        report.passed, item.state
+                    );
+                    println!("{}", report.summary);
+                }
+            } else {
+                eprintln!("Operational item '{}' not found", id);
+            }
+        }
+        OpCommands::Approve {
+            id,
+            approver,
+            notes,
+        } => {
+            let item_opt = store.get_operational_item(&id).await?;
+            if let Some(mut item) = item_opt {
+                item.approve(&approver, notes.as_deref().unwrap_or("Approved via CLI"))?;
+                if let Ok(res) = exodus_case::OperationalCasePromoter::promote(
+                    &mut item,
+                    std::path::Path::new(".exodus"),
+                ) {
+                    store.save_operational_item(&item).await?;
+                    let _ = store.persist_to_disk(&storage_path).await;
+                    println!(
+                        "✅ Item {} approved and promoted to {} (Fingerprint: {})",
+                        item.id, res.case_id, res.structural_fingerprint
+                    );
+                } else {
+                    let case_id = format!("CASE-{}", uuid::Uuid::now_v7());
+                    item.promote(&approver, &case_id)?;
+                    store.save_operational_item(&item).await?;
+                    let _ = store.persist_to_disk(&storage_path).await;
+                    println!("✅ Item {} approved and promoted to {}", item.id, case_id);
+                }
+            } else {
+                eprintln!("Operational item '{}' not found", id);
+            }
+        }
+        OpCommands::Promote { id, storage_dir } => {
+            let item_opt = store.get_operational_item(&id).await?;
+            if let Some(mut item) = item_opt {
+                let res = exodus_case::OperationalCasePromoter::promote(&mut item, &storage_dir)?;
+                store.save_operational_item(&item).await?;
+                let _ = store.persist_to_disk(&storage_path).await;
+                if json_output {
+                    println!("{}", serde_json::to_string_pretty(&res)?);
+                } else {
+                    println!("✅ Successfully promoted to {}", res.case_id);
+                    println!("   Fingerprint: {}", res.structural_fingerprint);
+                    println!("   Fixture Dir: {}", res.fixture_dir.display());
+                    println!("   Summary:     {}", res.summary);
+                }
+            } else {
+                eprintln!("Operational item '{}' not found", id);
+            }
+        }
+        OpCommands::Ingest {
+            domain,
+            title,
+            description,
+            requester,
+            file,
+        } => {
+            let tag: exodus_core::OperationalDomainTag =
+                domain.parse().map_err(|e| anyhow::anyhow!("{}", e))?;
+            let payload = if let Some(p) = file {
+                let content = std::fs::read_to_string(&p)?;
+                serde_json::from_str::<exodus_core::DomainPayload>(&content)?
+            } else {
+                match tag {
+                    exodus_core::OperationalDomainTag::ProdBug => {
+                        exodus_core::DomainPayload::ProdBug(exodus_core::ProdBugPayload {
+                            commit_id: "git-head".to_string(),
+                            error_message: title.clone(),
+                            stack_trace: None,
+                            target_file: None,
+                            target_symbol: None,
+                            reproduction_command: Some("cargo test".to_string()),
+                        })
+                    }
+                    exodus_core::OperationalDomainTag::CrmRequest => {
+                        exodus_core::DomainPayload::CrmRequest(exodus_core::CrmRequestPayload {
+                            account_id: "acc-custom".to_string(),
+                            account_name: "Customer Account".to_string(),
+                            current_arr: 75_000.0,
+                            requested_discount_pct: 15.0,
+                            requested_tier: "Enterprise".to_string(),
+                            requester_role: "AccountExec".to_string(),
+                            contract_term_months: 12,
+                            justification: "Standard commercial contract expansion request"
+                                .to_string(),
+                        })
+                    }
+                    exodus_core::OperationalDomainTag::SurveyMapping => {
+                        exodus_core::DomainPayload::SurveyMapping(
+                            exodus_core::SurveyMappingPayload {
+                                batch_id: "batch-manual".to_string(),
+                                source_platform: "CLI".to_string(),
+                                target_taxonomy_id: "root".to_string(),
+                                responses: vec![exodus_core::SurveyResponseItem {
+                                    id: "resp-cli-1".to_string(),
+                                    feedback_text: title.clone(),
+                                    customer_segment: Some("Enterprise".to_string()),
+                                    candidate_taxonomy_node: Some("tax-perf-latency".to_string()),
+                                }],
+                            },
+                        )
+                    }
+                }
+            };
+            let item = exodus_core::OperationalItem::new(
+                title,
+                description.unwrap_or_else(|| "Ingested via Exodus CLI".to_string()),
+                requester,
+                payload,
+            );
+            store.save_operational_item(&item).await?;
+            let _ = store.persist_to_disk(&storage_path).await;
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&item)?);
+            } else {
+                println!(
+                    "✅ Ingested item: {} [{}] ({})",
+                    item.id, item.domain_tag, item.title
+                );
+            }
+        }
+        OpCommands::Reject { id, reason } => {
+            let item_opt = store.get_operational_item(&id).await?;
+            if let Some(mut item) = item_opt {
+                item.reject("cli-operator", &reason)?;
+                store.save_operational_item(&item).await?;
+                let _ = store.persist_to_disk(&storage_path).await;
+                println!("❌ Item {} rejected: {}", item.id, reason);
+            } else {
+                eprintln!("Operational item '{}' not found", id);
+            }
+        }
+        OpCommands::Sdlc { write } => {
+            let scaffold = store.generate_pipeline_plugin_scaffold().await?;
+            for (path, content) in &scaffold {
+                println!("--- {} ---", path);
+                if write {
+                    if let Some(parent) = std::path::Path::new(path).parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(path, content)?;
+                    println!("(written to disk: {})", path);
+                } else {
+                    println!("{}", content);
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -3771,19 +4074,19 @@ fn collect_source_files_for_lang(
             collect_source_files_for_lang(&path, source_lang, files)?;
         } else if path.is_file() {
             let detected = detect_source_language(&path);
-            if source_lang == "auto"
+            if (source_lang == "auto"
                 || detected == source_lang
-                || (source_lang == "python" && detected == "python")
+                || (source_lang == "python" && detected == "python"))
+                && detected != "unknown"
             {
-                if detected != "unknown" {
-                    files.push(path);
-                }
+                files.push(path);
             }
         }
     }
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_repository_migration(
     source: &Path,
     output: &Path,
@@ -4399,7 +4702,9 @@ fn scaffold_target_workspace_root(
     packages: &[&exodus_toolchain::PackageDescriptor],
 ) -> std::io::Result<()> {
     if let Ok(emitter) = exodus_toolchain::TargetLanguageRegistry::get(target_lang) {
-        if let Some((manifest_file, manifest_content)) = emitter.generate_workspace_manifest(packages) {
+        if let Some((manifest_file, manifest_content)) =
+            emitter.generate_workspace_manifest(packages)
+        {
             fs::write(output.join(manifest_file), manifest_content)?;
         }
     }
@@ -4428,6 +4733,7 @@ fn scaffold_package_manifest(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_workspace_migration(
     source: &Path,
     output: &Path,
@@ -4605,7 +4911,7 @@ async fn execute_workspace_migration(
                             &safe_name,
                             rel_file,
                             &content,
-                            &src_lang,
+                            src_lang,
                             target_lang,
                             Some(&domain_ctx),
                             active_prompt,
@@ -5031,11 +5337,12 @@ async fn handle_natural_language_prompt(
         };
 
         // If user instructed cd, change directory
-        if lower.starts_with("cd ") || lower.contains("cd into") {
-            if path.is_dir() && path != Path::new(".") {
-                let _ = std::env::set_current_dir(&path);
-                println!("📁 Navigated to: {}", path.display());
-            }
+        if (lower.starts_with("cd ") || lower.contains("cd into"))
+            && path.is_dir()
+            && path != Path::new(".")
+        {
+            let _ = std::env::set_current_dir(&path);
+            println!("📁 Navigated to: {}", path.display());
         }
 
         // Context-aware workspace check:

@@ -11,6 +11,9 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use uuid::Uuid;
 
+pub mod promoter;
+pub use promoter::*;
+
 /// Lifecycle state of a migration case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CaseStatus {
@@ -313,7 +316,9 @@ impl CaseEngine {
         // 1. Write minimal source file
         let ext = if case.source_language.to_lowercase().contains("python") {
             "py"
-        } else if case.source_language.to_lowercase().contains("type") || case.source_language.to_lowercase().contains("js") {
+        } else if case.source_language.to_lowercase().contains("type")
+            || case.source_language.to_lowercase().contains("js")
+        {
             "ts"
         } else if case.source_language.to_lowercase().contains("go") {
             "go"
@@ -321,12 +326,17 @@ impl CaseEngine {
             "src"
         };
 
-        let unit_name = case.unit_id.as_deref().unwrap_or("repro_unit").replace("::", "_");
+        let unit_name = case
+            .unit_id
+            .as_deref()
+            .unwrap_or("repro_unit")
+            .replace("::", "_");
         let source_code = format!(
             "# Regression fixture for case {}\n# Category: {:?}\n# Failure: {}\ndef {}():\n    pass\n",
             case.case_id, case.failure_category, case.failure_description, unit_name
         );
-        fs::write(fixture_dir.join(format!("source.{ext}")), source_code).map_err(ExodusError::Io)?;
+        fs::write(fixture_dir.join(format!("source.{ext}")), source_code)
+            .map_err(ExodusError::Io)?;
 
         // 2. Write metadata and contract manifest
         let manifest = serde_json::json!({

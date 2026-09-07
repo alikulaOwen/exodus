@@ -4,10 +4,9 @@
 //! concurrency mapping, and Go toolchain verifier orchestration.
 
 use exodus_core::{
-    ConcurrencyMappingPlan, GroundingTier, LanguageId, MappingApprovalStatus,
-    MigrationOutcome, NullabilityPolicy, ParameterRule, ReceiverRule, ReturnTypeRule,
-    SignatureRuleSet, TargetLanguageSpecRecord, TargetPathMapping, TargetPathPlan,
-    TypeMappingRule,
+    ConcurrencyMappingPlan, GroundingTier, LanguageId, MappingApprovalStatus, MigrationOutcome,
+    NullabilityPolicy, ParameterRule, ReceiverRule, ReturnTypeRule, SignatureRuleSet,
+    TargetLanguageSpecRecord, TargetPathMapping, TargetPathPlan, TypeMappingRule,
 };
 use exodus_verifier::UniversalTargetVerifier;
 use std::collections::BTreeMap;
@@ -27,7 +26,8 @@ fn test_typescript_to_go_signature_rule_set_validation() {
         source_language: LanguageId::new("typescript"),
         target_language: LanguageId::new("go"),
         function_keyword: "func".to_string(),
-        signature_template: "{{function_keyword}} {{name}}({{parameters}}) {{return_type}}".to_string(),
+        signature_template: "{{function_keyword}} {{name}}({{parameters}}) {{return_type}}"
+            .to_string(),
         receiver: ReceiverRule {
             instance_template: "({{name}} *{{type}})".to_string(),
             mutable_instance_template: None,

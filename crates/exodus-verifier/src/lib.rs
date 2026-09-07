@@ -13,13 +13,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+pub mod domain_verifiers;
 pub mod pipeline;
 pub mod unit_gate;
-pub mod domain_verifiers;
 
+pub use domain_verifiers::*;
 pub use pipeline::*;
 pub use unit_gate::*;
-pub use domain_verifiers::*;
 
 /// Sanitizes a string into a valid Cargo package name.
 pub fn sanitize_crate_name(name: &str) -> String {

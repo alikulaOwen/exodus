@@ -148,6 +148,7 @@ impl GenericLanguageEmitter {
 }
 
 impl TargetLanguageEmitter for GenericLanguageEmitter {
+    #[allow(clippy::misnamed_getters)]
     fn name(&self) -> &str {
         &self.spec.id
     }
@@ -310,14 +311,16 @@ impl TargetLanguageRegistry {
         if let Some(spec) = specs.iter().find(|s| s.matches_query(&query)) {
             return Ok(Box::new(GenericLanguageEmitter::new(spec.clone())));
         }
-        Err(exodus_core::ExodusError::UnsupportedTargetLanguage(format!(
-            "`{lang}`; available targets: {}",
-            specs
-                .iter()
-                .map(|spec| spec.id.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )))
+        Err(exodus_core::ExodusError::UnsupportedTargetLanguage(
+            format!(
+                "`{lang}`; available targets: {}",
+                specs
+                    .iter()
+                    .map(|spec| spec.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ))
     }
 
     /// Resolves an emitter from an explicit `TargetLanguageSpecRecord`.

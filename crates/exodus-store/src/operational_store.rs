@@ -9,8 +9,9 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use exodus_core::{
-    CiFailureEventPayload, OperationalDomainTag, OperationalItem, OperationalLifecycleState, Result,
-    SdlcIntegrationSettings,
+    CiFailureEventPayload, CrmRequestPayload, DomainPayload, OperationalDomainTag, OperationalItem,
+    OperationalLifecycleState, ProdBugPayload, Result, SdlcIntegrationSettings,
+    SurveyMappingPayload, SurveyResponseItem,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -30,7 +31,12 @@ pub struct CrmAccountRecord {
 }
 
 impl CrmAccountRecord {
-    pub fn new(account_id: impl Into<String>, name: impl Into<String>, arr: f64, tier: impl Into<String>) -> Self {
+    pub fn new(
+        account_id: impl Into<String>,
+        name: impl Into<String>,
+        arr: f64,
+        tier: impl Into<String>,
+    ) -> Self {
         Self {
             account_id: account_id.into(),
             name: name.into(),
@@ -149,7 +155,21 @@ pub trait OperationalStore: Send + Sync {
     async fn get_sdlc_settings(&self) -> Result<SdlcIntegrationSettings>;
     async fn save_sdlc_settings(&mut self, settings: &SdlcIntegrationSettings) -> Result<()>;
     async fn generate_pipeline_plugin_scaffold(&self) -> Result<HashMap<String, String>>;
-    async fn ingest_ci_failure_event(&mut self, event: CiFailureEventPayload) -> Result<OperationalItem>;
+    async fn ingest_ci_failure_event(
+        &mut self,
+        event: CiFailureEventPayload,
+    ) -> Result<OperationalItem>;
+}
+
+/// Serializable snapshot representing the entire persistent state of the operational store.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoreSnapshot {
+    items: HashMap<String, OperationalItem>,
+    accounts: HashMap<String, CrmAccountRecord>,
+    policies: HashMap<String, CrmPolicyRule>,
+    taxonomy: HashMap<String, TaxonomyNodeRecord>,
+    feedbacks: HashMap<String, SurveyFeedbackRecord>,
+    sdlc_settings: SdlcIntegrationSettings,
 }
 
 /// Thread-safe in-memory and embedded Surreal-backed implementation of `OperationalStore`.
@@ -191,7 +211,8 @@ impl EmbeddedOperationalStore {
                 max_discount_pct: 25.0,
                 required_approval_role: "SalesLead".to_string(),
                 min_arr_threshold: 50_000.0,
-                description: "Sales Leads can authorize up to 25% discount for ARR >= $50k".to_string(),
+                description: "Sales Leads can authorize up to 25% discount for ARR >= $50k"
+                    .to_string(),
             },
         );
         policies.insert(
@@ -202,7 +223,9 @@ impl EmbeddedOperationalStore {
                 max_discount_pct: 40.0,
                 required_approval_role: "VP".to_string(),
                 min_arr_threshold: 100_000.0,
-                description: "VP approval required for discounts up to 40% and enterprise contracts".to_string(),
+                description:
+                    "VP approval required for discounts up to 40% and enterprise contracts"
+                        .to_string(),
             },
         );
 
@@ -266,6 +289,151 @@ impl EmbeddedOperationalStore {
             sdlc_settings: Arc::new(RwLock::new(SdlcIntegrationSettings::default())),
         }
     }
+
+    /// Persists the current operational store snapshot to disk.
+    pub async fn persist_to_disk(&self, path: &std::path::Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let snapshot = StoreSnapshot {
+            items: self.items.read().await.clone(),
+            accounts: self.accounts.read().await.clone(),
+            policies: self.policies.read().await.clone(),
+            taxonomy: self.taxonomy.read().await.clone(),
+            feedbacks: self.feedbacks.read().await.clone(),
+            sdlc_settings: self.sdlc_settings.read().await.clone(),
+        };
+        let json = serde_json::to_string_pretty(&snapshot)?;
+        std::fs::write(path, json).map_err(exodus_core::ExodusError::Io)?;
+        Ok(())
+    }
+
+    /// Loads the store snapshot from disk, or seeds demo fabric data and initializes if missing.
+    pub async fn load_or_init(path: &std::path::Path) -> Result<Self> {
+        if path.exists() {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                if let Ok(snapshot) = serde_json::from_str::<StoreSnapshot>(&content) {
+                    return Ok(Self {
+                        items: Arc::new(RwLock::new(snapshot.items)),
+                        accounts: Arc::new(RwLock::new(snapshot.accounts)),
+                        policies: Arc::new(RwLock::new(snapshot.policies)),
+                        taxonomy: Arc::new(RwLock::new(snapshot.taxonomy)),
+                        feedbacks: Arc::new(RwLock::new(snapshot.feedbacks)),
+                        sdlc_settings: Arc::new(RwLock::new(snapshot.sdlc_settings)),
+                    });
+                }
+            }
+        }
+        let mut store = Self::new();
+        store.seed_demo_fabric().await?;
+        let _ = store.persist_to_disk(path).await;
+        Ok(store)
+    }
+
+    /// Seeds realistic multi-domain enterprise fabric demonstration data if empty.
+    pub async fn seed_demo_fabric(&mut self) -> Result<()> {
+        let mut accounts_map = self.accounts.write().await;
+        accounts_map.insert(
+            "acc-enterprise-042".to_string(),
+            CrmAccountRecord {
+                account_id: "acc-enterprise-042".to_string(),
+                name: "Globex Financial Cloud".to_string(),
+                arr: 240_000.0,
+                tier: "Enterprise".to_string(),
+                max_allowed_discount_pct: 25.0,
+                sla_level: "Enterprise-Mission-Critical".to_string(),
+                renewal_date: None,
+            },
+        );
+        drop(accounts_map);
+
+        let mut items_map = self.items.write().await;
+        if items_map.is_empty() {
+            // 1. Engineering bug
+            let bug_payload = ProdBugPayload {
+                commit_id: "8fa24b91e0a4".to_string(),
+                error_message: "SessionTimeout: unhandled token refresh failure in AuthHandler::verify_token".to_string(),
+                stack_trace: Some("thread 'tokio-runtime-worker' panicked at 'called `Option::unwrap()` on a `None` value': crates/auth-service/src/token.rs:88:14".to_string()),
+                target_file: Some(std::path::PathBuf::from("crates/auth-service/src/token.rs")),
+                target_symbol: Some("AuthHandler::verify_token".to_string()),
+                reproduction_command: Some("cargo test --package auth-service -- test_token_refresh".to_string()),
+            };
+            let mut bug_item = OperationalItem::new(
+                "SessionTimeout in AuthHandler::verify_token",
+                "Production crash report: unhandled token refresh failure during token validation in AuthHandler.",
+                "ci-pipeline",
+                DomainPayload::ProdBug(bug_payload),
+            );
+            bug_item.id = "op-prod-bug-001".to_string();
+            let _ = bug_item.mark_sandboxed("exodus-engine", ".exodus/worktrees/op-prod-bug-001");
+            items_map.insert(bug_item.id.clone(), bug_item);
+
+            // 2. Commercial request
+            let mut crm_payload = CrmRequestPayload::new(
+                "acc-enterprise-042",
+                "Globex Financial Cloud",
+                240_000.0,
+                22.5,
+                "Enterprise",
+                "SalesLead",
+            );
+            crm_payload.contract_term_months = 24;
+            crm_payload.justification = "Multi-year renewal commitment with 200 additional user seats. Discount authorized under Sales Lead governance band.".to_string();
+            let mut crm_item = OperationalItem::new(
+                "Globex Financial Cloud — 22.5% Enterprise Multi-Year Discount",
+                "Commercial discount authorization request for multi-year enterprise renewal",
+                "sarah.chen@sales.internal",
+                DomainPayload::CrmRequest(crm_payload),
+            );
+            crm_item.id = "op-crm-req-002".to_string();
+            let _ = crm_item.mark_sandboxed("crm-sync-worker", "shadow-tx-globex-2026");
+            items_map.insert(crm_item.id.clone(), crm_item);
+
+            // 3. Product survey mapping
+            let responses = vec![
+                SurveyResponseItem {
+                    id: "resp-q3-001".to_string(),
+                    feedback_text: "The login page with SSO times out intermittently on Chrome"
+                        .to_string(),
+                    customer_segment: Some("Enterprise".to_string()),
+                    candidate_taxonomy_node: Some("tax-auth-login".to_string()),
+                },
+                SurveyResponseItem {
+                    id: "resp-q3-002".to_string(),
+                    feedback_text:
+                        "Slow dashboard query latency during peak Monday morning reports"
+                            .to_string(),
+                    customer_segment: Some("Enterprise".to_string()),
+                    candidate_taxonomy_node: Some("tax-perf-latency".to_string()),
+                },
+                SurveyResponseItem {
+                    id: "resp-q3-003".to_string(),
+                    feedback_text:
+                        "Invoice itemization is hard to reconcile with our accounting department"
+                            .to_string(),
+                    customer_segment: Some("Mid-Market".to_string()),
+                    candidate_taxonomy_node: Some("tax-bill-pricing".to_string()),
+                },
+            ];
+            let mut survey_payload = SurveyMappingPayload::new(
+                "batch-q3-nps-enterprise",
+                "Qualtrics-Enterprise-NPS",
+                "root-product-taxonomy",
+            );
+            survey_payload.responses = responses;
+            let mut survey_item = OperationalItem::new(
+                "Q3 Enterprise Customer CSAT/NPS Feedback Ontology Alignment",
+                "Customer sentiment batch from Qualtrics awaiting taxonomy classification and sentiment attribution",
+                "product-ops-bot",
+                DomainPayload::SurveyMapping(survey_payload),
+            );
+            survey_item.id = "op-survey-003".to_string();
+            let _ = survey_item.mark_sandboxed("survey-pipeline", "staging-partition-q3-nps");
+            items_map.insert(survey_item.id.clone(), survey_item);
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -284,7 +452,7 @@ impl OperationalStore for EmbeddedOperationalStore {
     async fn list_operational_items(&self) -> Result<Vec<OperationalItem>> {
         let map = self.items.read().await;
         let mut list: Vec<OperationalItem> = map.values().cloned().collect();
-        list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        list.sort_by_key(|a| std::cmp::Reverse(a.created_at));
         Ok(list)
     }
 
@@ -298,7 +466,7 @@ impl OperationalStore for EmbeddedOperationalStore {
             .filter(|i| i.domain_tag == domain)
             .cloned()
             .collect();
-        list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        list.sort_by_key(|a| std::cmp::Reverse(a.created_at));
         Ok(list)
     }
 
@@ -309,7 +477,7 @@ impl OperationalStore for EmbeddedOperationalStore {
         let map = self.items.read().await;
         let mut list: Vec<OperationalItem> =
             map.values().filter(|i| i.state == state).cloned().collect();
-        list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        list.sort_by_key(|a| std::cmp::Reverse(a.created_at));
         Ok(list)
     }
 
@@ -484,7 +652,10 @@ impl OperationalStore for EmbeddedOperationalStore {
         Ok(settings.generate_ci_scaffold())
     }
 
-    async fn ingest_ci_failure_event(&mut self, event: CiFailureEventPayload) -> Result<OperationalItem> {
+    async fn ingest_ci_failure_event(
+        &mut self,
+        event: CiFailureEventPayload,
+    ) -> Result<OperationalItem> {
         let item = event.into_operational_item("sdlc-ci-webhook");
         self.save_operational_item(&item).await?;
         Ok(item)
@@ -494,9 +665,7 @@ impl OperationalStore for EmbeddedOperationalStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use exodus_core::{
-        DomainPayload, ProdBugPayload, RemoteRepoProvider,
-    };
+    use exodus_core::{DomainPayload, ProdBugPayload, RemoteRepoProvider};
     use std::path::PathBuf;
 
     #[tokio::test]

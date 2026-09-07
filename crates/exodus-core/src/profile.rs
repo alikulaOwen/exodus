@@ -125,16 +125,19 @@ impl TargetPathPlan {
 
         for mapping in &self.mappings {
             if mapping.target.is_absolute()
-                || mapping
-                    .target
-                    .components()
-                    .any(|component| matches!(component, Component::ParentDir | Component::RootDir | Component::Prefix(_)))
+                || mapping.target.components().any(|component| {
+                    matches!(
+                        component,
+                        Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                    )
+                })
             {
                 errors.push(PathCollisionError {
                     kind: "target_root_escape".to_string(),
                     target: mapping.target.clone(),
                     sources: vec![mapping.source.clone()],
-                    message: "target path must remain relative to the approved output root".to_string(),
+                    message: "target path must remain relative to the approved output root"
+                        .to_string(),
                 });
                 continue;
             }
@@ -195,7 +198,11 @@ impl TargetPathPlan {
 
         errors.sort();
         errors.dedup();
-        if errors.is_empty() { Ok(()) } else { Err(errors) }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 }
 

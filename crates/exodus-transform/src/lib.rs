@@ -456,21 +456,22 @@ impl TransformationEngine {
 
         let body_code = Self::transform_body_code(&func.body_snippet, &ret_type, is_async);
 
-        let fb = if body_code.contains("todo!(") || body_code.contains("DynamicReflectionUnsupported") {
-            Some(FallbackRecord {
-                symbol_id: format!("function::{}", func.name),
-                source_location: Some(func.evidence.span.clone()),
-                construct: "dynamic_eval_reflection".to_string(),
-                strategy: FallbackStrategy::TypedFailureStub,
-                reason: "Dynamic eval reflection cannot be translated statically".to_string(),
-                confidence: 0.0,
-                verification_status: MigrationOutcome::Degraded,
-                human_review_required: true,
-                generated_code: body_code.clone(),
-            })
-        } else {
-            None
-        };
+        let fb =
+            if body_code.contains("todo!(") || body_code.contains("DynamicReflectionUnsupported") {
+                Some(FallbackRecord {
+                    symbol_id: format!("function::{}", func.name),
+                    source_location: Some(func.evidence.span.clone()),
+                    construct: "dynamic_eval_reflection".to_string(),
+                    strategy: FallbackStrategy::TypedFailureStub,
+                    reason: "Dynamic eval reflection cannot be translated statically".to_string(),
+                    confidence: 0.0,
+                    verification_status: MigrationOutcome::Degraded,
+                    human_review_required: true,
+                    generated_code: body_code.clone(),
+                })
+            } else {
+                None
+            };
 
         let code = format!(
             "{doc}pub {async_prefix}fn {}({}){} {{\n{}}}\n",

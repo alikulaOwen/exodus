@@ -7,18 +7,17 @@ pub mod assets;
 use axum::{
     extract::{Path, State},
     http::{header, StatusCode},
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse},
     routing::{get, post},
     Json, Router,
 };
-use exodus_core::{
-    CiFailureEventPayload, DomainPayload, OperationalItem, Result, SdlcIntegrationSettings,
-};
+use exodus_core::{CiFailureEventPayload, DomainPayload, OperationalItem, SdlcIntegrationSettings};
 use exodus_store::{EmbeddedOperationalStore, OperationalStore};
 use exodus_verifier::MultiDomainVerifier;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::result::Result as StdResult;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower_http::cors::CorsLayer;
@@ -38,7 +37,7 @@ impl WebState {
 }
 
 /// Request body for manual event ingestion.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IngestItemRequest {
     pub title: String,
     pub description: String,
@@ -47,14 +46,14 @@ pub struct IngestItemRequest {
 }
 
 /// Request body for human approval.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApproveRequest {
     pub approver: String,
     pub notes: String,
 }
 
 /// Request body for rejection.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RejectRequest {
     pub actor: String,
     pub reason: String,
@@ -78,7 +77,10 @@ pub fn create_router(state: WebState) -> Router {
         .route("/api/operations/:id/reject", post(reject_operation))
         .route("/api/operations/:id/promote", post(promote_operation))
         // SDLC and Pipeline endpoints
-        .route("/api/sdlc/settings", get(get_sdlc_settings).post(save_sdlc_settings))
+        .route(
+            "/api/sdlc/settings",
+            get(get_sdlc_settings).post(save_sdlc_settings),
+        )
         .route("/api/sdlc/scaffold", get(get_sdlc_scaffold))
         .route("/api/sdlc/webhook", post(handle_ci_webhook))
         .layer(CorsLayer::permissive())
@@ -86,7 +88,12 @@ pub fn create_router(state: WebState) -> Router {
 }
 
 /// Starts the embedded Axum HTTP server.
-pub async fn start_server(store: EmbeddedOperationalStore, host: &str, port: u16) -> anyhow::Result<()> {
+pub async fn start_server(
+    mut store: EmbeddedOperationalStore,
+    host: &str,
+    port: u16,
+) -> anyhow::Result<()> {
+    let _ = store.seed_demo_fabric().await;
     let state = WebState::new(store);
     let app = create_router(state);
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
@@ -113,7 +120,10 @@ async fn serve_css() -> impl IntoResponse {
 }
 
 async fn serve_js() -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "application/javascript")], assets::APP_JS)
+    (
+        [(header::CONTENT_TYPE, "application/javascript")],
+        assets::APP_JS,
+    )
 }
 
 async fn health_check() -> Json<serde_json::Value> {
@@ -134,7 +144,7 @@ async fn list_operations(State(state): State<WebState>) -> Json<Vec<OperationalI
 async fn get_operation(
     Path(id): Path<String>,
     State(state): State<WebState>,
-) -> Result<Json<OperationalItem>, StatusCode> {
+) -> StdResult<Json<OperationalItem>, StatusCode> {
     let store = state.store.lock().await;
     match store.get_operational_item(&id).await {
         Ok(Some(item)) => Ok(Json(item)),
@@ -145,7 +155,7 @@ async fn get_operation(
 async fn ingest_operation(
     State(state): State<WebState>,
     Json(req): Json<IngestItemRequest>,
-) -> Result<Json<OperationalItem>, (StatusCode, String)> {
+) -> StdResult<Json<OperationalItem>, (StatusCode, String)> {
     let mut store = state.store.lock().await;
     let item = OperationalItem::new(req.title, req.description, req.requester, req.payload);
     store
@@ -158,7 +168,7 @@ async fn ingest_operation(
 async fn sandbox_operation(
     Path(id): Path<String>,
     State(state): State<WebState>,
-) -> Result<Json<OperationalItem>, (StatusCode, String)> {
+) -> StdResult<Json<OperationalItem>, (StatusCode, String)> {
     let mut store = state.store.lock().await;
     let mut item = store
         .get_operational_item(&id)
@@ -180,7 +190,7 @@ async fn sandbox_operation(
 async fn verify_operation(
     Path(id): Path<String>,
     State(state): State<WebState>,
-) -> Result<Json<OperationalItem>, (StatusCode, String)> {
+) -> StdResult<Json<OperationalItem>, (StatusCode, String)> {
     let mut store = state.store.lock().await;
     let mut item = store
         .get_operational_item(&id)
@@ -190,8 +200,11 @@ async fn verify_operation(
 
     // Auto-advance to sandboxed if captured
     if item.state == exodus_core::OperationalLifecycleState::Captured {
-        item.mark_sandboxed("auto-sandbox-verifier", &format!(".exodus/worktrees/{}", item.id))
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        item.mark_sandboxed(
+            "auto-sandbox-verifier",
+            &format!(".exodus/worktrees/{}", item.id),
+        )
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     }
 
     let cloned_store = store.clone();
@@ -210,7 +223,7 @@ async fn approve_operation(
     Path(id): Path<String>,
     State(state): State<WebState>,
     Json(req): Json<ApproveRequest>,
-) -> Result<Json<OperationalItem>, (StatusCode, String)> {
+) -> StdResult<Json<OperationalItem>, (StatusCode, String)> {
     let mut store = state.store.lock().await;
     let mut item = store
         .get_operational_item(&id)
@@ -221,10 +234,14 @@ async fn approve_operation(
     item.approve(&req.approver, &req.notes)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
-    // Immediately promote to permanent organizational memory upon approval
-    let case_id = format!("CASE-{}", uuid::Uuid::now_v7());
-    item.promote(&req.approver, &case_id)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    // Immediately promote to permanent organizational memory and generate regression fixtures
+    if let Err(_e) =
+        exodus_case::OperationalCasePromoter::promote(&mut item, std::path::Path::new(".exodus"))
+    {
+        let case_id = format!("CASE-{}", uuid::Uuid::now_v7());
+        item.promote(&req.approver, &case_id)
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    }
 
     store
         .save_operational_item(&item)
@@ -237,7 +254,7 @@ async fn reject_operation(
     Path(id): Path<String>,
     State(state): State<WebState>,
     Json(req): Json<RejectRequest>,
-) -> Result<Json<OperationalItem>, (StatusCode, String)> {
+) -> StdResult<Json<OperationalItem>, (StatusCode, String)> {
     let mut store = state.store.lock().await;
     let mut item = store
         .get_operational_item(&id)
@@ -258,7 +275,7 @@ async fn reject_operation(
 async fn promote_operation(
     Path(id): Path<String>,
     State(state): State<WebState>,
-) -> Result<Json<OperationalItem>, (StatusCode, String)> {
+) -> StdResult<Json<OperationalItem>, (StatusCode, String)> {
     let mut store = state.store.lock().await;
     let mut item = store
         .get_operational_item(&id)
@@ -286,7 +303,7 @@ async fn get_sdlc_settings(State(state): State<WebState>) -> Json<SdlcIntegratio
 async fn save_sdlc_settings(
     State(state): State<WebState>,
     Json(settings): Json<SdlcIntegrationSettings>,
-) -> Result<Json<SdlcIntegrationSettings>, (StatusCode, String)> {
+) -> StdResult<Json<SdlcIntegrationSettings>, (StatusCode, String)> {
     let mut store = state.store.lock().await;
     store
         .save_sdlc_settings(&settings)
@@ -297,14 +314,17 @@ async fn save_sdlc_settings(
 
 async fn get_sdlc_scaffold(State(state): State<WebState>) -> Json<HashMap<String, String>> {
     let store = state.store.lock().await;
-    let scaffold = store.generate_pipeline_plugin_scaffold().await.unwrap_or_default();
+    let scaffold = store
+        .generate_pipeline_plugin_scaffold()
+        .await
+        .unwrap_or_default();
     Json(scaffold)
 }
 
 async fn handle_ci_webhook(
     State(state): State<WebState>,
     Json(payload): Json<CiFailureEventPayload>,
-) -> Result<Json<OperationalItem>, (StatusCode, String)> {
+) -> StdResult<Json<OperationalItem>, (StatusCode, String)> {
     let mut store = state.store.lock().await;
     let item = store
         .ingest_ci_failure_event(payload)
@@ -329,7 +349,12 @@ mod tests {
         // 1. Check index.html route
         let response = app
             .clone()
-            .oneshot(Request::builder().uri("/").body(axum::body::Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -337,7 +362,12 @@ mod tests {
         // 2. Check health route
         let response = app
             .clone()
-            .oneshot(Request::builder().uri("/api/health").body(axum::body::Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/api/health")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);

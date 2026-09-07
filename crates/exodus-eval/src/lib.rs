@@ -210,10 +210,19 @@ impl DeterministicFrontierReport {
         md.push_str("\n## Detailed Escalation Explanations\n\n");
         for u in &self.units {
             if u.execution_class != ExecutionClass::Deterministic {
-                md.push_str(&format!("### Unit `{}` ({})\n\n", u.unit_id, u.fixture_name));
-                md.push_str(&format!("- **Highest Escalation Class**: `{}`\n", u.execution_class));
+                md.push_str(&format!(
+                    "### Unit `{}` ({})\n\n",
+                    u.unit_id, u.fixture_name
+                ));
+                md.push_str(&format!(
+                    "- **Highest Escalation Class**: `{}`\n",
+                    u.execution_class
+                ));
                 md.push_str(&format!("- **Outcome Tier**: `{:?}`\n", u.outcome));
-                md.push_str(&format!("- **Root Escalation Reason**: {}\n", u.escalation_reason));
+                md.push_str(&format!(
+                    "- **Root Escalation Reason**: {}\n",
+                    u.escalation_reason
+                ));
                 md.push_str(&format!("- **Empirical Evidence**: {}\n\n", u.evidence));
             }
         }
@@ -565,14 +574,12 @@ impl Evaluator {
     }
 
     /// Runs a two-run learning experiment (Repo A -> promote case -> Repo B) to prove symbol-agnostic case transfer.
-    pub fn run_two_run_learning_experiment(
-        &self,
-        demo_dir: &Path,
-    ) -> Result<TwoRunLearningReport> {
+    pub fn run_two_run_learning_experiment(&self, demo_dir: &Path) -> Result<TwoRunLearningReport> {
         let _repo_a_dir = demo_dir.join("repo_a");
         let _repo_b_dir = demo_dir.join("repo_b");
 
-        let temp_path = std::env::temp_dir().join(format!("exodus_two_run_{}", uuid::Uuid::new_v4()));
+        let temp_path =
+            std::env::temp_dir().join(format!("exodus_two_run_{}", uuid::Uuid::new_v4()));
         let case_engine = CaseEngine::new(&temp_path);
 
         // Run 1: On Repo A, capture and promote the structural case
@@ -683,10 +690,7 @@ impl Evaluator {
                     )
                 });
                 let has_any_fallback = !transform_result.fallbacks.is_empty();
-                let fallback_reason = transform_result
-                    .fallbacks
-                    .first()
-                    .map(|f| f.reason.clone());
+                let fallback_reason = transform_result.fallbacks.first().map(|f| f.reason.clone());
 
                 let behavioral_passed = result.compiled
                     && has_contract
@@ -966,7 +970,9 @@ mod tests {
         let root = fixtures_root();
         let demo_dir = root.join("two_run_demo");
         if demo_dir.exists() {
-            let report = evaluator.run_two_run_learning_experiment(&demo_dir).unwrap();
+            let report = evaluator
+                .run_two_run_learning_experiment(&demo_dir)
+                .unwrap();
             assert!(report.cross_repository_transfer_verified);
             assert_eq!(report.run1_cases_captured, 1);
             assert_eq!(report.cases_promoted, 1);
