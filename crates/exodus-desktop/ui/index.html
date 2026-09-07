@@ -29,9 +29,13 @@
 
       <!-- Navigation Tabs -->
       <nav class="nav-tabs">
-        <button class="nav-tab active" id="tab-btn-queue">
+        <button class="nav-tab active" id="tab-btn-board">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+          Kanban Board
+        </button>
+        <button class="nav-tab" id="tab-btn-queue">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-          Tasks & Reviews
+          Tasks & Review
         </button>
         <button class="nav-tab" id="tab-btn-graph">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="18" cy="18" r="3"></circle><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line><line x1="8.5" y1="16.5" x2="15.5" y2="7.5"></line></svg>
@@ -41,6 +45,10 @@
 
       <!-- Action Controls & Status -->
       <div class="header-status">
+        <button id="btn-auto-pipeline" class="btn btn-secondary" title="Automatically simulate pipeline movement across board">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          <span>Auto-Run Pipeline</span>
+        </button>
         <button id="btn-new-item" class="btn btn-primary">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           New Task
@@ -56,8 +64,86 @@
       </div>
     </header>
 
-    <!-- Tasks & Reviews View (Default) -->
-    <div id="view-queue" class="main-view">
+    <!-- Linear / Notion Style Kanban Board View (Default) -->
+    <div id="view-board" class="main-view">
+      <div class="board-toolbar">
+        <div class="board-filters">
+          <button class="filter-chip active" data-filter="all">All Issues</button>
+          <button class="filter-chip" data-filter="#prod-bug">Engineering</button>
+          <button class="filter-chip" data-filter="#crm-request">Commercial</button>
+          <button class="filter-chip" data-filter="#survey-mapping">User Feedback</button>
+        </div>
+        <div class="board-hint">
+          <span>Tip: Drag & drop cards or click action buttons to advance tasks</span>
+        </div>
+      </div>
+
+      <div class="kanban-grid">
+        <!-- 1. Triggered Column -->
+        <div class="kanban-col" data-stage="captured" id="col-captured">
+          <div class="col-header">
+            <div class="col-title-group">
+              <span class="col-dot dot-rose"></span>
+              <span class="col-title">Triggered</span>
+              <span class="col-count" id="count-captured">0</span>
+            </div>
+            <button class="col-add-btn" onclick="openNewTaskModal('#prod-bug')" title="Add task">+</button>
+          </div>
+          <div class="col-cards" id="cards-captured"></div>
+        </div>
+
+        <!-- 2. In Sandbox Column -->
+        <div class="kanban-col" data-stage="sandboxed" id="col-sandboxed">
+          <div class="col-header">
+            <div class="col-title-group">
+              <span class="col-dot dot-blue"></span>
+              <span class="col-title">In Sandbox</span>
+              <span class="col-count" id="count-sandboxed">0</span>
+            </div>
+          </div>
+          <div class="col-cards" id="cards-sandboxed"></div>
+        </div>
+
+        <!-- 3. Tests Passing Column -->
+        <div class="kanban-col" data-stage="verified" id="col-verified">
+          <div class="col-header">
+            <div class="col-title-group">
+              <span class="col-dot dot-emerald"></span>
+              <span class="col-title">Tests Passing</span>
+              <span class="col-count" id="count-verified">0</span>
+            </div>
+          </div>
+          <div class="col-cards" id="cards-verified"></div>
+        </div>
+
+        <!-- 4. Approved Column -->
+        <div class="kanban-col" data-stage="approved" id="col-approved">
+          <div class="col-header">
+            <div class="col-title-group">
+              <span class="col-dot dot-amber"></span>
+              <span class="col-title">Approved</span>
+              <span class="col-count" id="count-approved">0</span>
+            </div>
+          </div>
+          <div class="col-cards" id="cards-approved"></div>
+        </div>
+
+        <!-- 5. Applied Column -->
+        <div class="kanban-col" data-stage="promoted" id="col-promoted">
+          <div class="col-header">
+            <div class="col-title-group">
+              <span class="col-dot dot-purple"></span>
+              <span class="col-title">Applied</span>
+              <span class="col-count" id="count-promoted">0</span>
+            </div>
+          </div>
+          <div class="col-cards" id="cards-promoted"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tasks & Reviews Split View -->
+    <div id="view-queue" class="main-view hidden">
       <!-- Domain Metrics Overview Grid -->
       <section class="kpi-grid">
         <div class="kpi-card" data-domain="#prod-bug">

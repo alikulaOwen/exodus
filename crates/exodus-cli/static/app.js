@@ -23,24 +23,106 @@ function showToast(message, type = 'info') {
   }, 3500);
 }
 
+let boardFilter = 'all';
+let isAutoPipelineRunning = false;
+let recentlyMovedId = null;
+
 // Navigation Tabs
+document.getElementById('tab-btn-board')?.addEventListener('click', () => {
+  document.getElementById('tab-btn-board').classList.add('active');
+  document.getElementById('tab-btn-queue').classList.remove('active');
+  document.getElementById('tab-btn-graph').classList.remove('active');
+  document.getElementById('view-board').classList.remove('hidden');
+  document.getElementById('view-queue').classList.add('hidden');
+  document.getElementById('view-graph').classList.add('hidden');
+  renderKanbanBoard();
+});
+
 document.getElementById('tab-btn-queue')?.addEventListener('click', () => {
   document.getElementById('tab-btn-queue').classList.add('active');
+  document.getElementById('tab-btn-board').classList.remove('active');
   document.getElementById('tab-btn-graph').classList.remove('active');
   document.getElementById('view-queue').classList.remove('hidden');
+  document.getElementById('view-board').classList.add('hidden');
   document.getElementById('view-graph').classList.add('hidden');
 });
 
 document.getElementById('tab-btn-graph')?.addEventListener('click', () => {
   document.getElementById('tab-btn-graph').classList.add('active');
+  document.getElementById('tab-btn-board').classList.remove('active');
   document.getElementById('tab-btn-queue').classList.remove('active');
   document.getElementById('view-graph').classList.remove('hidden');
+  document.getElementById('view-board').classList.add('hidden');
   document.getElementById('view-queue').classList.add('hidden');
   renderEsgCanvas();
 });
 
 document.getElementById('btn-view-lineage')?.addEventListener('click', () => {
   document.getElementById('tab-btn-graph')?.click();
+});
+
+// Kanban Board Toolbar Filters
+document.querySelectorAll('.board-filters .filter-chip').forEach(chip => {
+  chip.addEventListener('click', (e) => {
+    document.querySelectorAll('.board-filters .filter-chip').forEach(c => c.classList.remove('active'));
+    e.target.classList.add('active');
+    boardFilter = e.target.getAttribute('data-filter');
+    renderKanbanBoard();
+  });
+});
+
+// Auto-Run Pipeline
+document.getElementById('btn-auto-pipeline')?.addEventListener('click', async () => {
+  if (isAutoPipelineRunning) return;
+  isAutoPipelineRunning = true;
+  const btn = document.getElementById('btn-auto-pipeline');
+  btn.classList.add('btn-primary-highlight');
+  btn.innerHTML = `
+    <span class="pulse-dot"></span>
+    <span>Simulating Pipeline...</span>
+  `;
+
+  showToast('Starting automated pipeline execution...', 'info');
+
+  try {
+    // 1. Advance Captured -> In Sandbox -> Tests Passing
+    for (const item of operationalItems) {
+      const state = item.state.toLowerCase();
+      if (state === 'captured') {
+        recentlyMovedId = item.id;
+        await fetch(`/api/operations/${item.id}/verify`, { method: 'POST' });
+        await fetchQueue();
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    }
+
+    // 2. Advance Tests Passing -> Approved -> Applied
+    for (const item of operationalItems) {
+      const state = item.state.toLowerCase();
+      if (state === 'contract_verified' || state === 'contractverified' || state === 'sandboxed') {
+        recentlyMovedId = item.id;
+        await fetch(`/api/operations/${item.id}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approver: 'exodus-autonomous-pipeline', notes: 'Auto-verified via pipeline runner' })
+        });
+        await fetchQueue();
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    }
+
+    showToast('Pipeline simulation finished — all eligible tasks advanced!', 'success');
+  } catch (err) {
+    showToast('Auto-pipeline error: ' + err, 'error');
+  } finally {
+    isAutoPipelineRunning = false;
+    btn.classList.remove('btn-primary-highlight');
+    btn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+      <span>Auto-Run Pipeline</span>
+    `;
+    recentlyMovedId = null;
+  }
 });
 
 // Domain Filter Tabs
@@ -60,6 +142,7 @@ async function fetchQueue() {
       operationalItems = await res.json();
       updateKpis();
       renderQueue();
+      renderKanbanBoard();
       if (selectedItemId) {
         const item = operationalItems.find(i => i.id === selectedItemId);
         if (item) renderReview(item);
@@ -69,6 +152,180 @@ async function fetchQueue() {
     console.error('Failed to fetch operations queue:', err);
   }
 }
+
+// Linear / Notion Kanban Board Renderer
+function renderKanbanBoard() {
+  const filtered = boardFilter === 'all'
+    ? operationalItems
+    : operationalItems.filter(i => i.domain_tag === boardFilter);
+
+  const buckets = {
+    captured: [],
+    sandboxed: [],
+    verified: [],
+    approved: [],
+    promoted: []
+  };
+
+  filtered.forEach(item => {
+    const s = item.state.toLowerCase();
+    if (s === 'captured') buckets.captured.push(item);
+    else if (s === 'sandboxed') buckets.sandboxed.push(item);
+    else if (s === 'contract_verified' || s === 'contractverified' || s === 'degraded') buckets.verified.push(item);
+    else if (s === 'human_approved' || s === 'humanapproved') buckets.approved.push(item);
+    else if (s === 'promoted') buckets.promoted.push(item);
+    else buckets.captured.push(item);
+  });
+
+  Object.keys(buckets).forEach(stage => {
+    const countEl = document.getElementById(`count-${stage}`);
+    if (countEl) countEl.textContent = buckets[stage].length;
+
+    const colEl = document.getElementById(`cards-${stage}`);
+    if (!colEl) return;
+
+    if (buckets[stage].length === 0) {
+      colEl.innerHTML = '<div class="empty-col-placeholder">No tasks in this stage</div>';
+    } else {
+      colEl.innerHTML = buckets[stage].map(item => renderKanbanCard(item, stage)).join('');
+    }
+
+    const colWrapper = document.getElementById(`col-${stage}`);
+    if (colWrapper && !colWrapper.dataset.hasDropListener) {
+      colWrapper.dataset.hasDropListener = 'true';
+      colWrapper.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        colWrapper.classList.add('drag-over');
+      });
+      colWrapper.addEventListener('dragleave', () => {
+        colWrapper.classList.remove('drag-over');
+      });
+      colWrapper.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        colWrapper.classList.remove('drag-over');
+        const itemId = e.dataTransfer.getData('text/plain');
+        if (itemId) {
+          await handleDropOnStage(itemId, stage);
+        }
+      });
+    }
+  });
+
+  document.querySelectorAll('.kanban-card').forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', card.dataset.id);
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+    });
+  });
+}
+
+function renderKanbanCard(item, stage) {
+  const isJustMoved = recentlyMovedId === item.id;
+  const badgeClass = item.domain_tag === '#prod-bug' ? 'badge-emerald'
+    : item.domain_tag === '#crm-request' ? 'badge-amber' : 'badge-cyan';
+  
+  const shortKey = item.id.length > 8 ? item.id.substring(item.id.length - 6).toUpperCase() : item.id.toUpperCase();
+
+  let actionBtn = '';
+  if (stage === 'captured') {
+    actionBtn = `<button class="card-action-btn" onclick="window.advanceTask('${item.id}', 'verify', event)">⚡ Run Tests</button>`;
+  } else if (stage === 'sandboxed') {
+    actionBtn = `<button class="card-action-btn" onclick="window.advanceTask('${item.id}', 'verify', event)">▶ Run Tests</button>`;
+  } else if (stage === 'verified') {
+    actionBtn = `<button class="card-action-btn btn-promote" onclick="window.advanceTask('${item.id}', 'approve', event)">✓ Approve</button>`;
+  } else if (stage === 'approved') {
+    actionBtn = `<button class="card-action-btn btn-promote" onclick="window.advanceTask('${item.id}', 'promote', event)">🚀 Apply</button>`;
+  } else if (stage === 'promoted') {
+    actionBtn = `<span style="font-size: 10px; color: var(--accent-emerald); font-weight: 700;">✓ In master</span>`;
+  }
+
+  return `
+    <div class="kanban-card ${isJustMoved ? 'just-moved' : ''}" 
+         draggable="true" 
+         data-id="${item.id}"
+         onclick="window.openCardDetail('${item.id}')">
+      <div class="card-top">
+        <span class="card-key">${shortKey}</span>
+        <span class="badge ${badgeClass}">${item.domain_tag}</span>
+      </div>
+      <div class="card-title">${escapeHtml(item.title)}</div>
+      <div class="card-desc">${escapeHtml(item.description)}</div>
+      <div class="card-footer">
+        <div class="card-actor">
+          <span>👤 ${escapeHtml(item.requester)}</span>
+        </div>
+        <div class="card-actions">
+          ${actionBtn}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+window.openCardDetail = (id) => {
+  selectItem(id);
+  document.getElementById('tab-btn-queue')?.click();
+};
+
+window.advanceTask = async (id, action, event) => {
+  if (event) event.stopPropagation();
+  recentlyMovedId = id;
+
+  try {
+    if (action === 'verify') {
+      const res = await fetch(`/api/operations/${id}/verify`, { method: 'POST' });
+      if (res.ok) showToast('Tests executed and verified in sandbox', 'success');
+    } else if (action === 'approve') {
+      const res = await fetch(`/api/operations/${id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approver: 'human_operator', notes: 'Approved via Kanban' })
+      });
+      if (res.ok) showToast('Task signed off and approved', 'success');
+    } else if (action === 'promote') {
+      const res = await fetch(`/api/operations/${id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approver: 'human_operator', notes: 'Promoted to master' })
+      });
+      if (res.ok) showToast('Changes promoted and merged into master', 'success');
+    }
+    await fetchQueue();
+  } catch (err) {
+    showToast('Failed to advance task: ' + err, 'error');
+  }
+};
+
+async function handleDropOnStage(itemId, targetStage) {
+  recentlyMovedId = itemId;
+  try {
+    if (targetStage === 'verified' || targetStage === 'sandboxed') {
+      await fetch(`/api/operations/${itemId}/verify`, { method: 'POST' });
+      showToast(`Task moved to ${formatStateLabel(targetStage)}`, 'success');
+    } else if (targetStage === 'approved' || targetStage === 'promoted') {
+      await fetch(`/api/operations/${itemId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approver: 'human_operator', notes: `Moved via Kanban drag & drop` })
+      });
+      showToast(`Task moved to ${formatStateLabel(targetStage)}`, 'success');
+    }
+    await fetchQueue();
+  } catch (err) {
+    showToast('Cannot transition task: ' + err, 'error');
+  }
+}
+
+window.openNewTaskModal = (domainTag) => {
+  if (domainTag) {
+    const sel = document.getElementById('new-item-domain');
+    if (sel) sel.value = domainTag;
+  }
+  document.getElementById('modal-ingest')?.classList.remove('hidden');
+};
 
 function updateKpis() {
   const prodBug = operationalItems.filter(i => i.domain_tag === '#prod-bug').length;
