@@ -417,6 +417,7 @@ impl Evaluator {
                     !name.starts_with('.')
                         && !name.contains("_migrated_")
                         && !name.ends_with("_migrated")
+                        && name != "enterprise_fabric"
                 })
                 .collect();
             dirs.sort();

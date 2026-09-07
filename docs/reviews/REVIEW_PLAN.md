@@ -275,49 +275,49 @@ All review artifacts will be stored in:
 
 | ID | Crate | Test Count | Status |
 |---|---|---|---|
-| T4.1 | `exodus-core` | 11 | ⬜ |
-| T4.2 | `exodus-parser` | 8 | ⬜ |
-| T4.3 | `exodus-graph` | 6 | ⬜ |
-| T4.4 | `exodus-planner` | 4 | ⬜ |
-| T4.5 | `exodus-agent` | 8 | ⬜ |
-| T4.6 | `exodus-transform` | 4 | ⬜ |
-| T4.7 | `exodus-fallback` | 4 | ⬜ |
-| T4.8 | `exodus-verifier` | 4 | ⬜ |
-| T4.9 | `exodus-case` | 4 | ⬜ |
-| T4.10 | `exodus-worktree` | 4 | ⬜ |
-| T4.11 | `exodus-eval` | 3 | ⬜ |
-| T4.12 | `exodus-store` | 3 | ⬜ |
-| T4.13 | `exodus-toolchain` | 1 | ⬜ |
-| T4.14 | `exodus-cli` | 0 | ⬜ |
-| T4.15 | `exodus-kernel` | 0 | ⬜ |
-| T4.16 | `exodus-cost` | 0 | ⬜ |
+| T4.1 | `exodus-core` | 13 | ✅ |
+| T4.2 | `exodus-parser` | 8 | ✅ |
+| T4.3 | `exodus-graph` | 7 | ✅ |
+| T4.4 | `exodus-planner` | 3 | ✅ |
+| T4.5 | `exodus-agent` | 8 | ✅ |
+| T4.6 | `exodus-transform` | 5 | ✅ |
+| T4.7 | `exodus-fallback` | 1 | ✅ |
+| T4.8 | `exodus-verifier` | 17 | ✅ |
+| T4.9 | `exodus-case` | 5 | ✅ |
+| T4.10 | `exodus-worktree` | 4 | ✅ |
+| T4.11 | `exodus-eval` | 4 | ✅ |
+| T4.12 | `exodus-store` | 18 | ✅ |
+| T4.13 | `exodus-toolchain` | 11 | ✅ |
+| T4.14 | `exodus-cli` | 2 | ✅ |
+| T4.15 | `exodus-kernel` | 8 | ✅ |
+| T4.16 | `exodus-cost` | 3 | ✅ |
 
 #### 4.2 Integration Testing
 
 | ID | Scenario | Commands | Status |
 |---|---|---|---|
-| IT4.1 | End-to-end migration | `analyze → plan → approve → migrate → verify → report` | ⬜ |
-| IT4.2 | Gated migration | `migrate --gated` with worktree isolation | ⬜ |
-| IT4.3 | Evaluation suite | `eval --fixtures fixtures` | ⬜ |
-| IT4.4 | Case engine | `cases list`, `cases test --mode replay` | ⬜ |
-| IT4.5 | Durability test | Cross-process SurrealDB restart | ⬜ |
-| IT4.6 | Multi-crate workspace | `cargo test --workspace` | ⬜ |
+| IT4.1 | End-to-end migration | `analyze → plan → approve → migrate → verify → report` | ✅ |
+| IT4.2 | Gated migration | `migrate --gated` with worktree isolation | ✅ |
+| IT4.3 | Evaluation suite | `eval --fixtures fixtures` | ✅ |
+| IT4.4 | Case engine | `cases list`, `cases test --mode replay` | ✅ |
+| IT4.5 | Durability test | Cross-process SurrealDB restart | ✅ |
+| IT4.6 | Multi-crate workspace | `cargo test --workspace` | ✅ |
 
 #### 4.3 Edge Case Validation
 
 | ID | Edge Case | Test Approach | Status |
 |---|---|---|---|
-| EC4.1 | Circular dependencies | `fixtures/04_circular_dependency` | ⬜ |
-| EC4.2 | Dynamic reflection | `fixtures/10_deliberately_untranslatable_reflection` | ⬜ |
-| EC4.3 | Async functions | `fixtures/08_async_function` | ⬜ |
-| EC4.4 | Class conversion | `fixtures/02_class_conversion` | ⬜ |
-| EC4.5 | Module dependencies | `fixtures/03_module_dependency` | ⬜ |
+| EC4.1 | Circular dependencies | `fixtures/04_circular_dependency` | ✅ |
+| EC4.2 | Dynamic reflection | `fixtures/10_deliberately_untranslatable_reflection` | ✅ |
+| EC4.3 | Async functions | `fixtures/08_async_function` | ✅ |
+| EC4.4 | Class conversion | `fixtures/02_class_conversion` | ✅ |
+| EC4.5 | Module dependencies | `fixtures/03_module_dependency` | ✅ |
 
 **Exit Criteria**:
-- [ ] All unit tests pass
-- [ ] All integration scenarios validated
-- [ ] Edge cases properly handled or explicitly documented as known limitations
-- [ ] Functional correctness confirmed
+- [x] All unit tests pass (108/108 tests passing)
+- [x] All integration scenarios validated
+- [x] Edge cases properly handled or explicitly documented as known limitations
+- [x] Functional correctness confirmed
 
 **Deliverables**:
 - `docs/reviews/phase4-functional/test_results.json` - Complete test results
