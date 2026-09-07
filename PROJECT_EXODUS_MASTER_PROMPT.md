@@ -916,3 +916,34 @@ Do not declare completion until:
 - No secrets, absolute local links, fabricated metrics, or misleading success claims remain.
 
 Begin now by auditing the repository and reproducing the supplied completion report. Do not rebuild verified components unnecessarily. Prioritize missing worktree isolation, governed case learning, real evidence capture, and evaluation integrity, then run the complete system from a clean environment.
+
+## Architectural Mandate: Unified Business-to-Execution Control Plane
+
+Ensure the codebase reflects that Project Exodus is a unified agentic platform bridging software execution and critical business requirements across three tagged operational domains:
+
+1. Unified Event Model:
+* Every task (engineering bug, CRM request, or survey mapping) is an `OperationalItem` moving through an identical, auditable lifecycle:
+Captured -> Sandboxed -> Contract-Verified -> Human-Approved -> Promoted.
+
+2. Deterministic Verification Over Heuristics:
+* For #prod-bug: Verification is enforced via isolated unit compilation and test execution inside Git worktrees.
+* For #crm-request: Verification is enforced via policy graphs and schema constraints in SurrealDB.
+* For #survey-mapping: Verification is enforced via taxonomy graph completeness and foreign key integrity.
+
+3. Cross-Functional Web UI:
+* The embedded UI (Axum + static web assets) serves as the universal Human-in-the-Loop (HITL) gate.
+* It provides side-by-side Git diffs for engineering, policy-impact matrices for commercial operations, and visual taxonomy alignment for product teams.
+* Approval actions must explicitly promote verified resolutions into SurrealDB to expand the system's organizational memory.
+
+4. Alignment with Existing Infrastructure:
+* Zero external server dependencies: Embedded SurrealDB (SurrealKV) runs entirely local to the project.
+* Works natively with standard Git repositories, standard toolchains (Cargo, JDK), and standard browser environments.
+
+### Strategic Hackathon Positioning
+
+By framing the system this way, the project moves beyond a simple coding assistant or transpile script:
+
+* **For Rubric Criterion 1 (Problem & User Value — 15 pts):** Solves an organizational problem that causes friction across engineering, product, and operations teams daily.
+* **For Rubric Criterion 2 (Agent Engineering — 30 pts):** Demonstrates a multi-domain agentic architecture featuring sandboxed Git worktrees, AST traversal, embedded multi-model graph persistence, and strict verification loops.
+* **For Rubric Criterion 6 (Architectural Lessons — 5 pts):** Provides a compelling counter-narrative: *AI agents achieve production reliability not by expanding conversational prompt windows, but by operating within a strictly governed, cross-functional execution harness backed by deterministic verification and compounding memory*.
+

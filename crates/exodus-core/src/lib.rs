@@ -12,6 +12,15 @@ pub use deprecation::*;
 pub mod adapter;
 pub use adapter::*;
 
+pub mod operational_domain;
+pub use operational_domain::*;
+
+pub mod operational_item;
+pub use operational_item::*;
+
+pub mod sdlc_pipeline;
+pub use sdlc_pipeline::*;
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -298,6 +307,8 @@ pub enum ExodusError {
     PathCollision(String),
     #[error("Verification failure: {0}")]
     VerificationFailure(String),
+    #[error("Operational error: {0}")]
+    OperationalError(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("JSON error: {0}")]

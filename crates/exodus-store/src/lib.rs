@@ -4,8 +4,9 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use exodus_case::{CaseStatus, FailureCategory, MigrationCase};
 use exodus_core::{
-    BehavioralContract, DeprecationRecord, EsgEdge, EsgNode, ExodusError, MigrationOutcome,
-    RepositoryProfile, Result, TargetLanguageSpecRecord,
+    BehavioralContract, CiFailureEventPayload, DeprecationRecord, EsgEdge, EsgNode, ExodusError,
+    MigrationOutcome, OperationalDomainTag, OperationalItem, OperationalLifecycleState,
+    RepositoryProfile, Result, SdlcIntegrationSettings, TargetLanguageSpecRecord,
 };
 use exodus_graph::SemanticGraph;
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,9 @@ pub use dynamic_memory::*;
 
 pub mod skills_discovery;
 pub use skills_discovery::*;
+
+pub mod operational_store;
+pub use operational_store::*;
 
 /// Persistent record representing an ESG node in the database.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -806,6 +810,7 @@ pub struct SurrealGraphStore {
     db_path: PathBuf,
     db: Surreal<Db>,
     memory_backend: MemoryGraphStore,
+    operational_backend: EmbeddedOperationalStore,
     schema_version: u32,
     is_durable_file_backed: bool,
 }
@@ -837,6 +842,7 @@ impl SurrealGraphStore {
             db_path: path.clone(),
             db,
             memory_backend: MemoryGraphStore::new(),
+            operational_backend: EmbeddedOperationalStore::new(),
             schema_version: 4,
             is_durable_file_backed: true,
         };
@@ -872,6 +878,7 @@ impl SurrealGraphStore {
             db_path: PathBuf::from(":memory:"),
             db,
             memory_backend: MemoryGraphStore::new(),
+            operational_backend: EmbeddedOperationalStore::new(),
             schema_version: 4,
             is_durable_file_backed: false,
         };
@@ -1101,6 +1108,109 @@ impl TargetLanguageCatalog for SurrealGraphStore {
     }
 }
 
+#[async_trait]
+impl OperationalStore for SurrealGraphStore {
+    async fn save_operational_item(&mut self, item: &OperationalItem) -> Result<()> {
+        self.operational_backend.save_operational_item(item).await
+    }
+
+    async fn get_operational_item(&self, id: &str) -> Result<Option<OperationalItem>> {
+        self.operational_backend.get_operational_item(id).await
+    }
+
+    async fn list_operational_items(&self) -> Result<Vec<OperationalItem>> {
+        self.operational_backend.list_operational_items().await
+    }
+
+    async fn list_operational_items_by_domain(
+        &self,
+        domain: OperationalDomainTag,
+    ) -> Result<Vec<OperationalItem>> {
+        self.operational_backend.list_operational_items_by_domain(domain).await
+    }
+
+    async fn list_operational_items_by_state(
+        &self,
+        state: OperationalLifecycleState,
+    ) -> Result<Vec<OperationalItem>> {
+        self.operational_backend.list_operational_items_by_state(state).await
+    }
+
+    async fn save_crm_account(&mut self, account: &CrmAccountRecord) -> Result<()> {
+        self.operational_backend.save_crm_account(account).await
+    }
+
+    async fn get_crm_account(&self, account_id: &str) -> Result<Option<CrmAccountRecord>> {
+        self.operational_backend.get_crm_account(account_id).await
+    }
+
+    async fn list_crm_accounts(&self) -> Result<Vec<CrmAccountRecord>> {
+        self.operational_backend.list_crm_accounts().await
+    }
+
+    async fn save_crm_policy(&mut self, policy: &CrmPolicyRule) -> Result<()> {
+        self.operational_backend.save_crm_policy(policy).await
+    }
+
+    async fn list_crm_policies(&self) -> Result<Vec<CrmPolicyRule>> {
+        self.operational_backend.list_crm_policies().await
+    }
+
+    async fn evaluate_crm_discount(
+        &self,
+        account_id: &str,
+        requested_discount_pct: f64,
+        requester_role: &str,
+    ) -> Result<CrmEvaluationReport> {
+        self.operational_backend
+            .evaluate_crm_discount(account_id, requested_discount_pct, requester_role)
+            .await
+    }
+
+    async fn save_taxonomy_node(&mut self, node: &TaxonomyNodeRecord) -> Result<()> {
+        self.operational_backend.save_taxonomy_node(node).await
+    }
+
+    async fn get_taxonomy_node(&self, id: &str) -> Result<Option<TaxonomyNodeRecord>> {
+        self.operational_backend.get_taxonomy_node(id).await
+    }
+
+    async fn list_taxonomy_nodes(&self) -> Result<Vec<TaxonomyNodeRecord>> {
+        self.operational_backend.list_taxonomy_nodes().await
+    }
+
+    async fn save_survey_feedback(&mut self, feedback: &SurveyFeedbackRecord) -> Result<()> {
+        self.operational_backend.save_survey_feedback(feedback).await
+    }
+
+    async fn list_survey_feedbacks(&self) -> Result<Vec<SurveyFeedbackRecord>> {
+        self.operational_backend.list_survey_feedbacks().await
+    }
+
+    async fn match_feedback_to_taxonomy(
+        &self,
+        feedback_text: &str,
+    ) -> Result<Option<(TaxonomyNodeRecord, f64)>> {
+        self.operational_backend.match_feedback_to_taxonomy(feedback_text).await
+    }
+
+    async fn get_sdlc_settings(&self) -> Result<SdlcIntegrationSettings> {
+        self.operational_backend.get_sdlc_settings().await
+    }
+
+    async fn save_sdlc_settings(&mut self, settings: &SdlcIntegrationSettings) -> Result<()> {
+        self.operational_backend.save_sdlc_settings(settings).await
+    }
+
+    async fn generate_pipeline_plugin_scaffold(&self) -> Result<HashMap<String, String>> {
+        self.operational_backend.generate_pipeline_plugin_scaffold().await
+    }
+
+    async fn ingest_ci_failure_event(&mut self, event: CiFailureEventPayload) -> Result<OperationalItem> {
+        self.operational_backend.ingest_ci_failure_event(event).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1175,4 +1285,41 @@ mod tests {
             assert_eq!(loaded_dep.unwrap().target_symbol, "os.popen");
         }
     }
+
+    #[tokio::test]
+    async fn test_surreal_graph_store_operational_store() {
+        let mut store = SurrealGraphStore::open_in_memory().await.unwrap();
+
+        let payload = exodus_core::DomainPayload::CrmRequest(exodus_core::CrmRequestPayload::new(
+            "acc-enterprise-99",
+            "MegaCorp",
+            500_000.0,
+            20.0,
+            "Enterprise",
+            "SalesLead",
+        ));
+
+        let item = OperationalItem::new(
+            "Enterprise Renewal Discount",
+            "Customer requesting 20% discount on renewal",
+            "sales-lead",
+            payload,
+        );
+
+        let id = item.id.clone();
+        store.save_operational_item(&item).await.unwrap();
+
+        let loaded = store.get_operational_item(&id).await.unwrap();
+        assert!(loaded.is_some());
+        assert_eq!(loaded.unwrap().domain_tag, OperationalDomainTag::CrmRequest);
+
+        // Verify CRM policy evaluation through SurrealGraphStore
+        let eval = store.evaluate_crm_discount("acc-enterprise-99", 20.0, "SalesLead").await.unwrap();
+        assert!(eval.compliant);
+
+        // Verify SDLC scaffolding through SurrealGraphStore
+        let scaffold = store.generate_pipeline_plugin_scaffold().await.unwrap();
+        assert!(scaffold.contains_key(".github/workflows/exodus-verify.yml"));
+    }
 }
+
