@@ -16,16 +16,20 @@ Exodus is architected as a modular Rust workspace divided into decoupled pipelin
 
 ```text
 crates/
-├── exodus-core/       # Domain primitives, outcome types, errors
-├── exodus-parser/     # Tree-sitter frontend abstractions
+├── exodus-core/       # Domain primitives, outcome types, errors, OperationalItem
+├── exodus-parser/     # Tree-sitter frontend abstractions & multi-evidence sensing
 ├── exodus-graph/      # Exodus Semantic Graph (ESG) structures and algorithms
 ├── exodus-planner/    # Topological wave planner and risk evaluation
-├── exodus-agent/      # Bounded agent orchestration and prompt harnesses
+├── exodus-agent/      # Bounded agent orchestration and prompt harnesses (<= 3 repair iterations)
 ├── exodus-transform/  # Semantic code generation and AST transformation
 ├── exodus-fallback/   # Fallback stub generation and debt emission
 ├── exodus-verifier/   # Compiler, linter, and test verification runners
+├── exodus-store/      # Embedded SurrealDB persistence and ACID operational store
+├── exodus-kernel/     # Plugin lifecycle and maker-defined policy execution engine
+├── exodus-cost/       # Token usage telemetry and migration cost advisory
 ├── exodus-eval/       # Outcome metrics and benchmark aggregation
-└── exodus-cli/        # Main CLI entry point
+├── exodus-cli/        # Main CLI entry point and embedded Axum web server
+└── exodus-desktop/    # Native Tauri v2 desktop Mission Control & Board
 ```
 
 ## Data Flow & Migration Lifecycle
