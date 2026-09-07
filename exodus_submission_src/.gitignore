@@ -1,0 +1,29 @@
+# Build outputs
+/target/
+node_modules/
+dist/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime execution state, knowledge cases, contracts & evaluation exports (handled by embedded DB)
+.exodus/
+!.exodus/schemas/
+
+# Demo and generated migration fixtures
+demo_projects/
+crates/*_migrated_*/
+*_migrated_*/
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+*.tar.gz
+*.zip
+__pycache__/
+*.pyc
