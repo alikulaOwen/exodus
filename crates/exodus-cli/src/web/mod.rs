@@ -40,9 +40,55 @@ impl WebState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IngestItemRequest {
     pub title: String,
-    pub description: String,
+    #[serde(default)]
+    pub description: Option<String>,
     pub requester: String,
-    pub payload: DomainPayload,
+    #[serde(default)]
+    pub domain_tag: Option<String>,
+    #[serde(default)]
+    pub payload: Option<DomainPayload>,
+    #[serde(default)]
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub system_goal: Option<String>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
+}
+
+/// Request body for updating task prompt.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdatePromptRequest {
+    pub prompt: String,
+    #[serde(default)]
+    pub system_goal: Option<String>,
+}
+
+/// Request body for updating task tags and graph mappings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateTagsRequest {
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub graph_mappings: Vec<String>,
+}
+
+/// Request body for executing a harness unit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecuteHarnessRequest {
+    #[serde(default)]
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub system_goal: Option<String>,
+}
+
+/// Information about active harness environment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HarnessEnvironmentInfo {
+    pub active_agent: String,
+    pub model: String,
+    pub is_llm_detected: bool,
+    pub detected_toolchain: String,
+    pub knowledge_store: String,
+    pub system_goal_baseline: String,
 }
 
 /// Request body for human approval.
@@ -66,6 +112,8 @@ pub fn create_router(state: WebState) -> Router {
         .route("/", get(serve_index))
         .route("/static/style.css", get(serve_css))
         .route("/static/app.js", get(serve_js))
+        .route("/style.css", get(serve_css))
+        .route("/app.js", get(serve_js))
         // System endpoints
         .route("/api/health", get(health_check))
         .route("/api/operations", get(list_operations))
@@ -76,6 +124,22 @@ pub fn create_router(state: WebState) -> Router {
         .route("/api/operations/:id/approve", post(approve_operation))
         .route("/api/operations/:id/reject", post(reject_operation))
         .route("/api/operations/:id/promote", post(promote_operation))
+        .route("/api/operations/:id/prompt", post(update_prompt_operation))
+        .route("/api/operations/:id/tags", post(update_tags_operation))
+        .route(
+            "/api/operations/:id/harness/execute",
+            post(execute_harness_operation),
+        )
+        .route("/api/harness/environment", get(get_harness_environment))
+        .route("/api/plugins", get(get_kernel_plugins))
+        .route(
+            "/api/plugins/maker",
+            get(get_maker_plugins).post(save_maker_plugin),
+        )
+        .route(
+            "/api/plugins/maker/:id",
+            axum::routing::delete(delete_maker_plugin),
+        )
         // SDLC and Pipeline endpoints
         .route(
             "/api/sdlc/settings",
@@ -158,12 +222,165 @@ async fn ingest_operation(
     Json(req): Json<IngestItemRequest>,
 ) -> StdResult<Json<OperationalItem>, (StatusCode, String)> {
     let mut store = state.store.lock().await;
-    let item = OperationalItem::new(req.title, req.description, req.requester, req.payload);
+    let tag = if let Some(t) = &req.domain_tag {
+        t.parse::<exodus_core::OperationalDomainTag>()
+            .unwrap_or(exodus_core::OperationalDomainTag::ProdBug)
+    } else {
+        exodus_core::OperationalDomainTag::ProdBug
+    };
+
+    let payload = if let Some(p) = req.payload {
+        p
+    } else {
+        match tag {
+            exodus_core::OperationalDomainTag::ProdBug => {
+                DomainPayload::ProdBug(exodus_core::ProdBugPayload {
+                    commit_id: format!("git-{}", &uuid::Uuid::now_v7().to_string()[..8]),
+                    error_message: req.description.clone().unwrap_or_else(|| req.title.clone()),
+                    stack_trace: None,
+                    target_file: None,
+                    target_symbol: None,
+                    reproduction_command: Some("cargo test".to_string()),
+                })
+            }
+            exodus_core::OperationalDomainTag::CrmRequest => {
+                DomainPayload::CrmRequest(exodus_core::CrmRequestPayload::new(
+                    "acc-custom",
+                    &req.title,
+                    50_000.0,
+                    15.0,
+                    "Growth",
+                    &req.requester,
+                ))
+            }
+            exodus_core::OperationalDomainTag::SurveyMapping => DomainPayload::SurveyMapping(
+                exodus_core::SurveyMappingPayload::new("batch-custom", "Direct", "root"),
+            ),
+        }
+    };
+
+    let mut item = OperationalItem::new(
+        req.title,
+        req.description
+            .unwrap_or_else(|| "Created via Exodus Board".to_string()),
+        req.requester,
+        payload,
+    );
+    item.domain_tag = tag;
+
+    if let Some(p) = req.prompt {
+        item.attach_prompt(p, req.system_goal);
+    }
+    if let Some(t) = req.tags {
+        item.tags = t;
+    }
+
     store
         .save_operational_item(&item)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(item))
+}
+
+async fn update_prompt_operation(
+    Path(id): Path<String>,
+    State(state): State<WebState>,
+    Json(req): Json<UpdatePromptRequest>,
+) -> StdResult<Json<OperationalItem>, (StatusCode, String)> {
+    let mut store = state.store.lock().await;
+    let mut item = store
+        .get_operational_item(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Item not found".to_string()))?;
+
+    item.attach_prompt(req.prompt, req.system_goal);
+    store
+        .save_operational_item(&item)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(item))
+}
+
+async fn update_tags_operation(
+    Path(id): Path<String>,
+    State(state): State<WebState>,
+    Json(req): Json<UpdateTagsRequest>,
+) -> StdResult<Json<OperationalItem>, (StatusCode, String)> {
+    let mut store = state.store.lock().await;
+    let mut item = store
+        .get_operational_item(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Item not found".to_string()))?;
+
+    item.update_tags(req.tags, req.graph_mappings);
+    store
+        .save_operational_item(&item)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(item))
+}
+
+async fn execute_harness_operation(
+    Path(id): Path<String>,
+    State(state): State<WebState>,
+    Json(req): Json<ExecuteHarnessRequest>,
+) -> StdResult<Json<OperationalItem>, (StatusCode, String)> {
+    let mut store = state.store.lock().await;
+    let mut item = store
+        .get_operational_item(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Item not found".to_string()))?;
+
+    if let Some(p) = req.prompt {
+        item.attach_prompt(p, req.system_goal);
+    }
+
+    if item.state == exodus_core::OperationalLifecycleState::Captured {
+        item.mark_sandboxed(
+            "harness-worktree-controller",
+            &format!(".exodus/worktrees/{}", item.id),
+        )
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    }
+
+    let cloned_store = store.clone();
+    MultiDomainVerifier::verify_item(&mut item, &cloned_store, None)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    store
+        .save_operational_item(&item)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(item))
+}
+
+async fn get_harness_environment() -> Json<HarnessEnvironmentInfo> {
+    let agent_discovery = exodus_agent::AgentDiscovery::auto_detect();
+    let (active_agent, model, is_llm_detected) = match agent_discovery {
+        exodus_agent::AgentDiscoveryResult::Found(agent) => {
+            (agent.description, agent.profile.model, true)
+        }
+        exodus_agent::AgentDiscoveryResult::NoneDetected {
+            warning_message, ..
+        } => ("Deterministic AST Mode".to_string(), warning_message, false),
+    };
+
+    let toolchain = exodus_toolchain::WorkspaceScanner::detect_toolchain(std::path::Path::new("."));
+
+    Json(HarnessEnvironmentInfo {
+        active_agent,
+        model,
+        is_llm_detected,
+        detected_toolchain: toolchain.display_name().to_string(),
+        knowledge_store: ".exodus/fabric_store.json (Embedded Operational Store)".to_string(),
+        system_goal_baseline:
+            "Modernize repository and eliminate behavioral regressions through atomic unit gates"
+                .to_string(),
+    })
 }
 
 async fn sandbox_operation(
@@ -334,6 +551,144 @@ async fn handle_ci_webhook(
     Ok(Json(item))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KernelPluginInfo {
+    pub id: String,
+    pub name: String,
+    pub category: String,
+    pub description: String,
+    pub active: bool,
+    pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CustomMakerPlugin {
+    pub id: String,
+    pub name: String,
+    pub category: String,
+    pub description: String,
+    pub enabled: bool,
+    pub rule_directive: String,
+    #[serde(default)]
+    pub config: HashMap<String, String>,
+}
+
+async fn get_kernel_plugins() -> Json<Vec<KernelPluginInfo>> {
+    Json(vec![
+        KernelPluginInfo {
+            id: "builtin:theme-grayscale-gold".to_string(),
+            name: "Grayscale Gold Theme Plugin".to_string(),
+            category: "Theme".to_string(),
+            description: "Default sleek dark monochrome palette with warm light golden metallic accents and high-contrast typography.".to_string(),
+            active: true,
+            capabilities: vec!["theme:grayscale-gold".to_string(), "palette:gold-metallic".to_string()],
+        },
+        KernelPluginInfo {
+            id: "builtin:theme-minimal-light".to_string(),
+            name: "Minimal Light Studio Plugin".to_string(),
+            category: "Theme".to_string(),
+            description: "High-contrast clean studio light mode for daylight reading and documentation review.".to_string(),
+            active: false,
+            capabilities: vec!["theme:minimal-light".to_string()],
+        },
+        KernelPluginInfo {
+            id: "builtin:theme-pure-midnight".to_string(),
+            name: "Pure Midnight OLED Plugin".to_string(),
+            category: "Theme".to_string(),
+            description: "True black OLED mode with luminous golden accents for dark environments.".to_string(),
+            active: false,
+            capabilities: vec!["theme:pure-midnight".to_string()],
+        },
+        KernelPluginInfo {
+            id: "builtin:guard-strict-oracle".to_string(),
+            name: "Strict Oracle Policy Guard".to_string(),
+            category: "PolicyGuard".to_string(),
+            description: "Enforces evidence-based metric honesty, grounds behavioral test contracts, and disallows ungrounded signatures as passing.".to_string(),
+            active: true,
+            capabilities: vec!["guard:metric-honesty".to_string(), "guard:grounded-oracles".to_string()],
+        },
+        KernelPluginInfo {
+            id: "builtin:ai-bounded-repair".to_string(),
+            name: "AI Step & Bounded Repair Controller".to_string(),
+            category: "AiStep".to_string(),
+            description: "Orchestrates LLM prompts within 3 repair iterations, isolates git worktree sandboxes, and synthesizes root-cause failure diagnostics.".to_string(),
+            active: true,
+            capabilities: vec!["ai:bounded-repair".to_string(), "ai:failure-breakdown".to_string(), "ai:prompt-refinement".to_string()],
+        },
+        KernelPluginInfo {
+            id: "builtin:board-flow".to_string(),
+            name: "Configurable Board Workflow".to_string(),
+            category: "Workflow".to_string(),
+            description: "Provides multi-stage board flow, custom stage labels, WIP limit alerts, and zero-dialog inline task creation.".to_string(),
+            active: true,
+            capabilities: vec!["flow:inline-creation".to_string(), "flow:stage-relations".to_string(), "flow:wip-limits".to_string()],
+        },
+    ])
+}
+
+async fn get_maker_plugins() -> Json<Vec<CustomMakerPlugin>> {
+    let path = std::path::Path::new(".exodus/maker_plugins.json");
+    if path.exists() {
+        if let Ok(content) = tokio::fs::read_to_string(path).await {
+            if let Ok(plugins) = serde_json::from_str::<Vec<CustomMakerPlugin>>(&content) {
+                return Json(plugins);
+            }
+        }
+    }
+    Json(vec![
+        CustomMakerPlugin {
+            id: "maker-policy-01".to_string(),
+            name: "Constant-Time Signature Guard".to_string(),
+            category: "PolicyGuard".to_string(),
+            description: "Enforce constant-time comparison in cryptographic token handlers to prevent timing leaks.".to_string(),
+            enabled: true,
+            rule_directive: "assert_constant_time_comparison".to_string(),
+            config: HashMap::new(),
+        },
+        CustomMakerPlugin {
+            id: "maker-ai-01".to_string(),
+            name: "Bounded Unit Chaining Step".to_string(),
+            category: "AiStep".to_string(),
+            description: "Break complex refactoring prompts into granular, verifiable single-symbol edits.".to_string(),
+            enabled: true,
+            rule_directive: "decompose_to_single_symbol_waves".to_string(),
+            config: HashMap::new(),
+        },
+    ])
+}
+
+async fn save_maker_plugin(
+    Json(plugin): Json<CustomMakerPlugin>,
+) -> StdResult<Json<Vec<CustomMakerPlugin>>, (StatusCode, String)> {
+    let mut plugins = get_maker_plugins().await.0;
+    if let Some(idx) = plugins.iter().position(|p| p.id == plugin.id) {
+        plugins[idx] = plugin;
+    } else {
+        plugins.push(plugin);
+    }
+    let _ = tokio::fs::create_dir_all(".exodus").await;
+    let serialized = serde_json::to_string_pretty(&plugins)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    tokio::fs::write(".exodus/maker_plugins.json", serialized)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(plugins))
+}
+
+async fn delete_maker_plugin(
+    Path(id): Path<String>,
+) -> StdResult<Json<Vec<CustomMakerPlugin>>, (StatusCode, String)> {
+    let mut plugins = get_maker_plugins().await.0;
+    plugins.retain(|p| p.id != id);
+    let _ = tokio::fs::create_dir_all(".exodus").await;
+    let serialized = serde_json::to_string_pretty(&plugins)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    tokio::fs::write(".exodus/maker_plugins.json", serialized)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(plugins))
+}
+
 async fn get_graph_topology() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "nodes": [
@@ -481,9 +836,13 @@ mod tests {
         ));
         let ingest_body = serde_json::to_string(&IngestItemRequest {
             title: "API Ingested Item".to_string(),
-            description: "Testing API flow".to_string(),
+            description: Some("Testing API flow".to_string()),
             requester: "test-runner".to_string(),
-            payload,
+            domain_tag: None,
+            payload: Some(payload),
+            prompt: None,
+            system_goal: None,
+            tags: None,
         })
         .unwrap();
 

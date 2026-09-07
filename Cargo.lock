@@ -1779,10 +1779,13 @@ name = "exodus-desktop"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "exodus-agent",
  "exodus-case",
  "exodus-core",
  "exodus-graph",
+ "exodus-kernel",
  "exodus-store",
+ "exodus-toolchain",
  "exodus-verifier",
  "serde",
  "serde_json",

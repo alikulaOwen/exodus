@@ -7,7 +7,7 @@
 
 use exodus_core::{
     ContractVerificationReport, CrmRequestPayload, DomainPayload, MigrationDebt, OperationalItem,
-    ProdBugPayload, Result, RuleVerificationResult, SurveyMappingPayload,
+    ProdBugPayload, Result, RuleVerificationResult, SurveyMappingPayload, UnitPromptDiagnostic,
 };
 use exodus_store::OperationalStore;
 use std::path::Path;
@@ -340,6 +340,85 @@ impl MultiDomainVerifier {
         };
 
         item.record_verification("deterministic-contract-verifier", report.clone())?;
+
+        // If verification failed or degraded with debt, synthesize stage-by-stage prompt diagnostic breakdown
+        let prompt_goal = item
+            .prompt
+            .clone()
+            .unwrap_or_else(|| format!("Resolve: {}", item.title));
+
+        if !report.passed {
+            let failed_rule = report
+                .rule_results
+                .iter()
+                .find(|r| !r.passed)
+                .map(|r| r.details.clone())
+                .unwrap_or_else(|| report.summary.clone());
+
+            let failure_reason = match &item.payload {
+                DomainPayload::ProdBug(_) => {
+                    format!("The prompt directed the agent to achieve a unit change, but tests/compilation diverged: {}. Possible cause: unhandled variant, missing boundary guard, or incorrect signature.", failed_rule)
+                }
+                DomainPayload::CrmRequest(_) => {
+                    format!("Requested commercial exception violates policy threshold: {}. Prompt did not specify required approval override authority.", failed_rule)
+                }
+                DomainPayload::SurveyMapping(_) => {
+                    format!(
+                        "Taxonomy mapping contains unresolved foreign key or unmapped tokens: {}.",
+                        failed_rule
+                    )
+                }
+            };
+
+            let suggested_refinement = match &item.payload {
+                DomainPayload::ProdBug(_) => Some(format!(
+                    "{} Explicitly check for edge cases and ensure all test contracts in {} pass cleanly without panicking.",
+                    prompt_goal.trim(),
+                    failed_rule
+                )),
+                DomainPayload::CrmRequest(_) => Some(format!(
+                    "{} Include VP-level override escalation tag or adjust discount under 20% limit.",
+                    prompt_goal.trim()
+                )),
+                DomainPayload::SurveyMapping(_) => Some(format!(
+                    "{} Map all unclassified keywords to default fallback taxonomy domain.",
+                    prompt_goal.trim()
+                )),
+            };
+
+            item.record_diagnostic(UnitPromptDiagnostic {
+                stage_failed: "Stage 3: Tests Passing (Contract Gate Failure)".to_string(),
+                prompt_goal: prompt_goal.clone(),
+                execution_divergence: failed_rule.clone(),
+                failure_reason,
+                error_snippet: Some(report.summary.clone()),
+                suggested_refinement,
+            });
+        } else if !report.debt.is_empty() {
+            let debt_desc = report
+                .debt
+                .iter()
+                .map(|d| d.reason.clone())
+                .collect::<Vec<_>>()
+                .join("; ");
+
+            item.record_diagnostic(UnitPromptDiagnostic {
+                stage_failed: "Stage 3: Tests Passing (Degraded with Debt)".to_string(),
+                prompt_goal: prompt_goal.clone(),
+                execution_divergence: format!("Passed compiler check but emitted {} migration debt item(s)", report.debt.len()),
+                failure_reason: format!("Prompt achieved partial unit transformation but relied on fallback stubs: {}", debt_desc),
+                error_snippet: Some(debt_desc.clone()),
+                suggested_refinement: Some(format!(
+                    "{} Fully implement stubbed fallbacks: {} without using todo!() or degraded branches.",
+                    prompt_goal.trim(),
+                    debt_desc
+                )),
+            });
+        } else {
+            // Passed cleanly without debt
+            item.unit_diagnostic = None;
+        }
+
         Ok(report)
     }
 }

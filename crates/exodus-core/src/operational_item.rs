@@ -108,6 +108,19 @@ pub struct AuditLogEntry {
     pub details: String,
 }
 
+/// Diagnostic breakdown explaining why a prompt failed to achieve its unit goal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnitPromptDiagnostic {
+    pub stage_failed: String,
+    pub prompt_goal: String,
+    pub execution_divergence: String,
+    pub failure_reason: String,
+    #[serde(default)]
+    pub error_snippet: Option<String>,
+    #[serde(default)]
+    pub suggested_refinement: Option<String>,
+}
+
 /// Universal operational unit bridging business requests and execution mechanics.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperationalItem {
@@ -141,6 +154,21 @@ pub struct OperationalItem {
     pub audit_trail: Vec<AuditLogEntry>,
     /// Explicit migration or operational debt items
     pub debt: Vec<MigrationDebt>,
+    /// Optional developer prompt attached to this unit
+    #[serde(default)]
+    pub prompt: Option<String>,
+    /// Macro system goal to which this unit attaches
+    #[serde(default)]
+    pub system_goal: Option<String>,
+    /// User-editable tags (e.g. #auth, #latency, #security)
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Mapped Change Graph symbol/file IDs
+    #[serde(default)]
+    pub graph_mappings: Vec<String>,
+    /// Diagnostic breakdown if verification/prompt failed or degraded
+    #[serde(default)]
+    pub unit_diagnostic: Option<UnitPromptDiagnostic>,
 }
 
 impl OperationalItem {
@@ -182,6 +210,11 @@ impl OperationalItem {
             verification_report: None,
             audit_trail: vec![initial_audit],
             debt: Vec::new(),
+            prompt: None,
+            system_goal: None,
+            tags: vec![domain_tag.to_string()],
+            graph_mappings: Vec::new(),
+            unit_diagnostic: None,
         }
     }
 
@@ -327,6 +360,44 @@ impl OperationalItem {
             details: format!("Rejected: {}", reason),
         });
         Ok(())
+    }
+
+    /// Attach or update the developer prompt and optional macro system goal for this unit.
+    pub fn attach_prompt(&mut self, prompt: impl Into<String>, system_goal: Option<String>) {
+        self.prompt = Some(prompt.into());
+        if system_goal.is_some() {
+            self.system_goal = system_goal;
+        }
+        self.updated_at = Utc::now();
+        self.audit_trail.push(AuditLogEntry {
+            timestamp: self.updated_at,
+            actor: "developer".to_string(),
+            action: "PROMPT_ATTACHED".to_string(),
+            details: format!("Attached developer unit prompt: {:?}", self.prompt),
+        });
+    }
+
+    /// Update user-editable tags and Change Graph symbol/file mappings.
+    pub fn update_tags(&mut self, tags: Vec<String>, graph_mappings: Vec<String>) {
+        self.tags = tags;
+        self.graph_mappings = graph_mappings;
+        self.updated_at = Utc::now();
+        self.audit_trail.push(AuditLogEntry {
+            timestamp: self.updated_at,
+            actor: "operator".to_string(),
+            action: "TAGS_UPDATED".to_string(),
+            details: format!(
+                "Updated {} tags and {} graph mappings",
+                self.tags.len(),
+                self.graph_mappings.len()
+            ),
+        });
+    }
+
+    /// Record a diagnostic breakdown explaining why a prompt failed to achieve its goal.
+    pub fn record_diagnostic(&mut self, diag: UnitPromptDiagnostic) {
+        self.unit_diagnostic = Some(diag);
+        self.updated_at = Utc::now();
     }
 }
 

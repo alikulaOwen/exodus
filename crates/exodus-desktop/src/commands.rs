@@ -193,27 +193,63 @@ pub async fn reject_operation(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn ingest_operation(
     title: String,
     description: Option<String>,
     requester: String,
     domain_tag: String,
-    payload: serde_json::Value,
+    payload: Option<serde_json::Value>,
+    prompt: Option<String>,
+    system_goal: Option<String>,
+    tags: Option<Vec<String>>,
     state: State<'_, DesktopState>,
 ) -> Result<OperationalItem, String> {
     let mut store = state.store.lock().await;
     let tag: OperationalDomainTag = domain_tag.parse().map_err(|e: String| e)?;
 
-    let domain_payload: DomainPayload = serde_json::from_value(payload)
-        .map_err(|e| format!("Invalid domain payload format: {}", e))?;
+    let domain_payload: DomainPayload = if let Some(p) = payload {
+        serde_json::from_value(p).map_err(|e| format!("Invalid domain payload format: {}", e))?
+    } else {
+        match tag {
+            OperationalDomainTag::ProdBug => DomainPayload::ProdBug(exodus_core::ProdBugPayload {
+                commit_id: format!("git-{}", &uuid::Uuid::now_v7().to_string()[..8]),
+                error_message: description.clone().unwrap_or_else(|| title.clone()),
+                stack_trace: None,
+                target_file: None,
+                target_symbol: None,
+                reproduction_command: Some("cargo test".to_string()),
+            }),
+            OperationalDomainTag::CrmRequest => {
+                DomainPayload::CrmRequest(exodus_core::CrmRequestPayload::new(
+                    "acc-custom",
+                    &title,
+                    50_000.0,
+                    15.0,
+                    "Growth",
+                    &requester,
+                ))
+            }
+            OperationalDomainTag::SurveyMapping => DomainPayload::SurveyMapping(
+                exodus_core::SurveyMappingPayload::new("batch-custom", "Direct", "root"),
+            ),
+        }
+    };
 
     let mut item = OperationalItem::new(
         title,
-        description.unwrap_or_else(|| "Ingested via Exodus Desktop".to_string()),
+        description.unwrap_or_else(|| "Created via Exodus Board".to_string()),
         requester,
         domain_payload,
     );
     item.domain_tag = tag;
+
+    if let Some(p) = prompt {
+        item.attach_prompt(p, system_goal);
+    }
+    if let Some(custom_tags) = tags {
+        item.tags = custom_tags;
+    }
 
     store
         .save_operational_item(&item)
@@ -221,6 +257,127 @@ pub async fn ingest_operation(
         .map_err(|e| e.to_string())?;
     let _ = store.persist_to_disk(&state.storage_path).await;
 
+    Ok(item)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HarnessEnvironmentInfo {
+    pub active_agent: String,
+    pub model: String,
+    pub is_llm_detected: bool,
+    pub detected_toolchain: String,
+    pub knowledge_store: String,
+    pub system_goal_baseline: String,
+}
+
+#[tauri::command]
+pub async fn get_harness_environment() -> Result<HarnessEnvironmentInfo, String> {
+    let agent_discovery = exodus_agent::AgentDiscovery::auto_detect();
+    let (active_agent, model, is_llm_detected) = match agent_discovery {
+        exodus_agent::AgentDiscoveryResult::Found(agent) => {
+            (agent.description, agent.profile.model, true)
+        }
+        exodus_agent::AgentDiscoveryResult::NoneDetected {
+            warning_message, ..
+        } => ("Deterministic AST Mode".to_string(), warning_message, false),
+    };
+
+    let toolchain = exodus_toolchain::WorkspaceScanner::detect_toolchain(std::path::Path::new("."));
+
+    Ok(HarnessEnvironmentInfo {
+        active_agent,
+        model,
+        is_llm_detected,
+        detected_toolchain: toolchain.display_name().to_string(),
+        knowledge_store: ".exodus/fabric_store.json (Embedded Operational Store)".to_string(),
+        system_goal_baseline:
+            "Modernize repository and eliminate behavioral regressions through atomic unit gates"
+                .to_string(),
+    })
+}
+
+#[tauri::command]
+pub async fn update_item_prompt(
+    id: String,
+    prompt: String,
+    system_goal: Option<String>,
+    state: State<'_, DesktopState>,
+) -> Result<OperationalItem, String> {
+    let mut store = state.store.lock().await;
+    let mut item = store
+        .get_operational_item(&id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Operational item '{}' not found", id))?;
+
+    item.attach_prompt(prompt, system_goal);
+    store
+        .save_operational_item(&item)
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = store.persist_to_disk(&state.storage_path).await;
+    Ok(item)
+}
+
+#[tauri::command]
+pub async fn update_item_tags(
+    id: String,
+    tags: Vec<String>,
+    graph_mappings: Vec<String>,
+    state: State<'_, DesktopState>,
+) -> Result<OperationalItem, String> {
+    let mut store = state.store.lock().await;
+    let mut item = store
+        .get_operational_item(&id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Operational item '{}' not found", id))?;
+
+    item.update_tags(tags, graph_mappings);
+    store
+        .save_operational_item(&item)
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = store.persist_to_disk(&state.storage_path).await;
+    Ok(item)
+}
+
+#[tauri::command]
+pub async fn execute_harness_unit(
+    id: String,
+    prompt: Option<String>,
+    system_goal: Option<String>,
+    state: State<'_, DesktopState>,
+) -> Result<OperationalItem, String> {
+    let mut store = state.store.lock().await;
+    let mut item = store
+        .get_operational_item(&id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Operational item '{}' not found", id))?;
+
+    if let Some(p) = prompt {
+        item.attach_prompt(p, system_goal);
+    }
+
+    if item.state == OperationalLifecycleState::Captured {
+        item.mark_sandboxed(
+            "harness-worktree-controller",
+            &format!(".exodus/worktrees/{}", item.id),
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    let cloned_store = store.clone();
+    exodus_verifier::MultiDomainVerifier::verify_item(&mut item, &cloned_store, None)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    store
+        .save_operational_item(&item)
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = store.persist_to_disk(&state.storage_path).await;
     Ok(item)
 }
 
@@ -427,4 +584,143 @@ pub async fn get_esg_topology(_sample_id: Option<String>) -> Result<EsgTopologyP
         title: Some("Change Lineage Graph".to_string()),
         description: Some("Trace how triggers and developer prompts lead directly to codebase file changes and automated test runs.".to_string()),
     })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KernelPluginInfo {
+    pub id: String,
+    pub name: String,
+    pub category: String, // "Theme", "PolicyGuard", "AiStep", "Workflow"
+    pub description: String,
+    pub active: bool,
+    pub capabilities: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn get_kernel_plugins() -> Result<Vec<KernelPluginInfo>, String> {
+    Ok(vec![
+        KernelPluginInfo {
+            id: "builtin:theme-grayscale-gold".to_string(),
+            name: "Grayscale Gold Theme Plugin".to_string(),
+            category: "Theme".to_string(),
+            description: "Default sleek dark monochrome palette with warm light golden metallic accents and high-contrast typography.".to_string(),
+            active: true,
+            capabilities: vec!["theme:grayscale-gold".to_string(), "palette:gold-metallic".to_string()],
+        },
+        KernelPluginInfo {
+            id: "builtin:theme-minimal-light".to_string(),
+            name: "Minimal Light Studio Plugin".to_string(),
+            category: "Theme".to_string(),
+            description: "High-contrast clean studio light mode for daylight reading and documentation review.".to_string(),
+            active: false,
+            capabilities: vec!["theme:minimal-light".to_string()],
+        },
+        KernelPluginInfo {
+            id: "builtin:theme-pure-midnight".to_string(),
+            name: "Pure Midnight OLED Plugin".to_string(),
+            category: "Theme".to_string(),
+            description: "True black OLED mode with luminous golden accents for dark environments.".to_string(),
+            active: false,
+            capabilities: vec!["theme:pure-midnight".to_string()],
+        },
+        KernelPluginInfo {
+            id: "builtin:guard-strict-oracle".to_string(),
+            name: "Strict Oracle Policy Guard".to_string(),
+            category: "PolicyGuard".to_string(),
+            description: "Enforces evidence-based metric honesty, grounds behavioral test contracts, and disallows ungrounded signatures as passing.".to_string(),
+            active: true,
+            capabilities: vec!["guard:metric-honesty".to_string(), "guard:grounded-oracles".to_string()],
+        },
+        KernelPluginInfo {
+            id: "builtin:ai-bounded-repair".to_string(),
+            name: "AI Step & Bounded Repair Controller".to_string(),
+            category: "AiStep".to_string(),
+            description: "Orchestrates LLM prompts within 3 repair iterations, isolates git worktree sandboxes, and synthesizes root-cause failure diagnostics.".to_string(),
+            active: true,
+            capabilities: vec!["ai:bounded-repair".to_string(), "ai:failure-breakdown".to_string(), "ai:prompt-refinement".to_string()],
+        },
+        KernelPluginInfo {
+            id: "builtin:board-flow".to_string(),
+            name: "Configurable Board Workflow".to_string(),
+            category: "Workflow".to_string(),
+            description: "Provides multi-stage board flow, custom stage labels, WIP limit alerts, and zero-dialog inline task creation.".to_string(),
+            active: true,
+            capabilities: vec!["flow:inline-creation".to_string(), "flow:stage-relations".to_string(), "flow:wip-limits".to_string()],
+        },
+    ])
+}
+
+/// Custom maker plugin defined by users (custom policy guard, custom AI step, custom theme)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CustomMakerPlugin {
+    pub id: String,
+    pub name: String,
+    pub category: String, // "PolicyGuard", "AiStep", "Theme", "AppBehavior"
+    pub description: String,
+    pub enabled: bool,
+    pub rule_directive: String,
+    #[serde(default)]
+    pub config: HashMap<String, String>,
+}
+
+#[tauri::command]
+pub async fn get_maker_plugins() -> Result<Vec<CustomMakerPlugin>, String> {
+    let path = std::path::Path::new(".exodus/maker_plugins.json");
+    if path.exists() {
+        if let Ok(content) = tokio::fs::read_to_string(path).await {
+            if let Ok(plugins) = serde_json::from_str::<Vec<CustomMakerPlugin>>(&content) {
+                return Ok(plugins);
+            }
+        }
+    }
+    Ok(vec![
+        CustomMakerPlugin {
+            id: "maker-policy-01".to_string(),
+            name: "Constant-Time Signature Guard".to_string(),
+            category: "PolicyGuard".to_string(),
+            description: "Enforce constant-time comparison in cryptographic token handlers to prevent timing leaks.".to_string(),
+            enabled: true,
+            rule_directive: "assert_constant_time_comparison".to_string(),
+            config: HashMap::new(),
+        },
+        CustomMakerPlugin {
+            id: "maker-ai-01".to_string(),
+            name: "Bounded Unit Chaining Step".to_string(),
+            category: "AiStep".to_string(),
+            description: "Break complex refactoring prompts into granular, verifiable single-symbol edits.".to_string(),
+            enabled: true,
+            rule_directive: "decompose_to_single_symbol_waves".to_string(),
+            config: HashMap::new(),
+        },
+    ])
+}
+
+#[tauri::command]
+pub async fn save_maker_plugin(
+    plugin: CustomMakerPlugin,
+) -> Result<Vec<CustomMakerPlugin>, String> {
+    let mut plugins = get_maker_plugins().await.unwrap_or_default();
+    if let Some(idx) = plugins.iter().position(|p| p.id == plugin.id) {
+        plugins[idx] = plugin;
+    } else {
+        plugins.push(plugin);
+    }
+    let _ = tokio::fs::create_dir_all(".exodus").await;
+    let serialized = serde_json::to_string_pretty(&plugins).map_err(|e| e.to_string())?;
+    tokio::fs::write(".exodus/maker_plugins.json", serialized)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(plugins)
+}
+
+#[tauri::command]
+pub async fn delete_maker_plugin(id: String) -> Result<Vec<CustomMakerPlugin>, String> {
+    let mut plugins = get_maker_plugins().await.unwrap_or_default();
+    plugins.retain(|p| p.id != id);
+    let _ = tokio::fs::create_dir_all(".exodus").await;
+    let serialized = serde_json::to_string_pretty(&plugins).map_err(|e| e.to_string())?;
+    tokio::fs::write(".exodus/maker_plugins.json", serialized)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(plugins)
 }

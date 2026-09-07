@@ -59,6 +59,8 @@ pub enum PluginCategory {
     AgentLoopPolicy,  // Code Mode, Step-by-Step, or Autonomous policy
     VerificationRule, // Compiler and test runners
     FallbackStrategy, // Stub generation and debt emission
+    Theme,            // UI Theme, palette tokens, and design styles
+    PolicyGuard,      // Safety oracles, ABAC limits, and metric honesty guards
 }
 
 /// Strongly-typed kernel events routed through the plugin bus.

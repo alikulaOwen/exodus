@@ -305,6 +305,75 @@ impl ExodusPlugin for SdlcModernizationPlugin {
     }
 }
 
+/// Built-in Theme Plugin providing the default Grayscale Dark + Light Gold aesthetic.
+pub struct GrayscaleGoldThemePlugin;
+
+#[async_trait]
+impl ExodusPlugin for GrayscaleGoldThemePlugin {
+    fn id(&self) -> &'static str {
+        "builtin:theme-grayscale-gold"
+    }
+
+    fn category(&self) -> PluginCategory {
+        PluginCategory::Theme
+    }
+
+    fn priority(&self) -> i32 {
+        50
+    }
+
+    async fn handle_event(
+        &self,
+        _event: &KernelEvent,
+        _ctx: &mut KernelContext,
+    ) -> Result<Option<Value>, KernelError> {
+        Ok(Some(serde_json::json!({
+            "plugin": self.id(),
+            "theme_name": "Grayscale Gold",
+            "dark_mode": true,
+            "palette": {
+                "background": "#090b0e",
+                "surface": "#101318",
+                "card": "#151820",
+                "accent_gold": "#d4af37",
+                "accent_gold_light": "#f6d87c"
+            }
+        })))
+    }
+}
+
+/// Built-in Policy Guard Plugin enforcing grounded test oracles and metric honesty.
+pub struct StrictOraclePolicyGuardPlugin;
+
+#[async_trait]
+impl ExodusPlugin for StrictOraclePolicyGuardPlugin {
+    fn id(&self) -> &'static str {
+        "builtin:guard-strict-oracle"
+    }
+
+    fn category(&self) -> PluginCategory {
+        PluginCategory::PolicyGuard
+    }
+
+    fn priority(&self) -> i32 {
+        95
+    }
+
+    async fn handle_event(
+        &self,
+        _event: &KernelEvent,
+        _ctx: &mut KernelContext,
+    ) -> Result<Option<Value>, KernelError> {
+        Ok(Some(serde_json::json!({
+            "plugin": self.id(),
+            "policy": "strict_grounded_oracles",
+            "enforce_metric_honesty": true,
+            "disallow_ungrounded_signatures": true,
+            "max_repair_budget": 3
+        })))
+    }
+}
+
 /// Mounts all default builtin plugins into the given micro-kernel.
 pub async fn register_default_plugins(kernel: &mut crate::ExodusKernel) -> Result<(), KernelError> {
     kernel.mount(Box::new(TreeSitterParserPlugin)).await?;
@@ -314,6 +383,10 @@ pub async fn register_default_plugins(kernel: &mut crate::ExodusKernel) -> Resul
     kernel.mount(Box::new(ToolchainVerifierPlugin)).await?;
     kernel.mount(Box::new(FallbackStrategyPlugin)).await?;
     kernel.mount(Box::new(CodeModeAgentPlugin)).await?;
+    kernel.mount(Box::new(GrayscaleGoldThemePlugin)).await?;
+    kernel
+        .mount(Box::new(StrictOraclePolicyGuardPlugin))
+        .await?;
     Ok(())
 }
 
@@ -334,10 +407,16 @@ mod tests {
         register_default_plugins(&mut kernel).await.unwrap();
 
         let plugins = kernel.list_plugins();
-        assert_eq!(plugins.len(), 7);
+        assert_eq!(plugins.len(), 9);
         assert!(plugins
             .iter()
             .any(|(id, _, _)| *id == "builtin:tree-sitter-parser"));
+        assert!(plugins
+            .iter()
+            .any(|(id, _, _)| *id == "builtin:theme-grayscale-gold"));
+        assert!(plugins
+            .iter()
+            .any(|(id, _, _)| *id == "builtin:guard-strict-oracle"));
         assert!(plugins
             .iter()
             .any(|(id, _, _)| *id == "builtin:sdlc-modernization"));

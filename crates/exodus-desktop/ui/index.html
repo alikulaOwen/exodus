@@ -1,9 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="grayscale-gold">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Project Exodus — Enterprise Mission Control</title>
+  <!-- TailwindCSS Engine with Grayscale Gold Extension -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            gold: {
+              DEFAULT: '#d4af37',
+              light: '#f6d87c',
+              dark: '#aa8c2c',
+            }
+          }
+        }
+      }
+    }
+  </script>
   <link rel="stylesheet" href="./style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,7 +49,7 @@
       <nav class="nav-tabs">
         <button class="nav-tab active" id="tab-btn-board">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
-          Kanban Board
+          Board
         </button>
         <button class="nav-tab" id="tab-btn-queue">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
@@ -43,8 +61,17 @@
         </button>
       </nav>
 
-      <!-- Action Controls & Status -->
+      <!-- Action Controls, Theme Selector & Status -->
       <div class="header-status">
+        <!-- Theme Switcher -->
+        <div class="theme-select-wrapper" title="Switch Theme">
+          <select id="theme-selector" class="form-select" style="padding: 4px 26px 4px 10px; font-size: 11px;">
+            <option value="grayscale-gold">Grayscale Gold</option>
+            <option value="minimal-light">Minimal Light</option>
+            <option value="pure-midnight">Pure Midnight</option>
+          </select>
+        </div>
+
         <button id="btn-auto-pipeline" class="btn btn-secondary" title="Automatically simulate pipeline movement across board">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
           <span>Auto-Run Pipeline</span>
@@ -64,81 +91,31 @@
       </div>
     </header>
 
-    <!-- Linear / Notion Style Kanban Board View (Default) -->
+    <!-- Linear / Notion Style Board View (Default) -->
     <div id="view-board" class="main-view">
       <div class="board-toolbar">
-        <div class="board-filters">
-          <button class="filter-chip active" data-filter="all">All Issues</button>
-          <button class="filter-chip" data-filter="#prod-bug">Engineering</button>
-          <button class="filter-chip" data-filter="#crm-request">Commercial</button>
-          <button class="filter-chip" data-filter="#survey-mapping">User Feedback</button>
+        <div class="board-toolbar-left">
+          <div class="board-filters">
+            <button class="filter-chip active" data-filter="all">All Issues</button>
+            <button class="filter-chip" data-filter="#prod-bug">Engineering</button>
+            <button class="filter-chip" data-filter="#crm-request">Commercial</button>
+            <button class="filter-chip" data-filter="#survey-mapping">User Feedback</button>
+          </div>
         </div>
-        <div class="board-hint">
-          <span>Tip: Drag & drop cards or click action buttons to advance tasks</span>
+        <div class="board-toolbar-right">
+          <button id="btn-config-board" class="btn btn-secondary btn-sm" title="Configure board stages and flow">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span>Configure Board</span>
+          </button>
+          <div class="board-hint">
+            <span>Tip: Click empty space to create a task &bull; Drag & drop to advance</span>
+          </div>
         </div>
       </div>
 
-      <div class="kanban-grid">
-        <!-- 1. Triggered Column -->
-        <div class="kanban-col" data-stage="captured" id="col-captured">
-          <div class="col-header">
-            <div class="col-title-group">
-              <span class="col-dot dot-rose"></span>
-              <span class="col-title">Triggered</span>
-              <span class="col-count" id="count-captured">0</span>
-            </div>
-            <button class="col-add-btn" onclick="openNewTaskModal('#prod-bug')" title="Add task">+</button>
-          </div>
-          <div class="col-cards" id="cards-captured"></div>
-        </div>
-
-        <!-- 2. In Sandbox Column -->
-        <div class="kanban-col" data-stage="sandboxed" id="col-sandboxed">
-          <div class="col-header">
-            <div class="col-title-group">
-              <span class="col-dot dot-blue"></span>
-              <span class="col-title">In Sandbox</span>
-              <span class="col-count" id="count-sandboxed">0</span>
-            </div>
-          </div>
-          <div class="col-cards" id="cards-sandboxed"></div>
-        </div>
-
-        <!-- 3. Tests Passing Column -->
-        <div class="kanban-col" data-stage="verified" id="col-verified">
-          <div class="col-header">
-            <div class="col-title-group">
-              <span class="col-dot dot-emerald"></span>
-              <span class="col-title">Tests Passing</span>
-              <span class="col-count" id="count-verified">0</span>
-            </div>
-          </div>
-          <div class="col-cards" id="cards-verified"></div>
-        </div>
-
-        <!-- 4. Approved Column -->
-        <div class="kanban-col" data-stage="approved" id="col-approved">
-          <div class="col-header">
-            <div class="col-title-group">
-              <span class="col-dot dot-amber"></span>
-              <span class="col-title">Approved</span>
-              <span class="col-count" id="count-approved">0</span>
-            </div>
-          </div>
-          <div class="col-cards" id="cards-approved"></div>
-        </div>
-
-        <!-- 5. Applied Column -->
-        <div class="kanban-col" data-stage="promoted" id="col-promoted">
-          <div class="col-header">
-            <div class="col-title-group">
-              <span class="col-dot dot-purple"></span>
-              <span class="col-title">Applied</span>
-              <span class="col-count" id="count-promoted">0</span>
-            </div>
-          </div>
-          <div class="col-cards" id="cards-promoted"></div>
-        </div>
+      <!-- Configurable Multi-Column Board Grid -->
+      <div class="board-grid kanban-grid" id="board-grid">
+        <!-- Columns are dynamically managed by board configuration -->
       </div>
     </div>
 
@@ -148,43 +125,55 @@
       <section class="kpi-grid">
         <div class="kpi-card" data-domain="#prod-bug">
           <div class="kpi-header">
-            <span class="kpi-title">ENGINEERING BUGS</span>
-            <span class="badge badge-emerald">Sandbox Active</span>
+            <span class="badge badge-emerald">#prod-bug</span>
+            <span class="kpi-domain-title">Engineering</span>
           </div>
-          <div class="kpi-value" id="kpi-prod-bug">0</div>
-          <div class="kpi-sub">Runtime & Compiler Fixes</div>
+          <div class="kpi-metric-row">
+            <div class="kpi-val" id="metric-prod-count">0</div>
+            <div class="kpi-sub">Active Issues</div>
+          </div>
+          <div class="kpi-bar-track"><div class="kpi-bar-fill fill-emerald" style="width: 78%;"></div></div>
         </div>
 
         <div class="kpi-card" data-domain="#crm-request">
           <div class="kpi-header">
-            <span class="kpi-title">SALES & CONTRACTS</span>
-            <span class="badge badge-amber">Policy Guard</span>
+            <span class="badge badge-amber">#crm-request</span>
+            <span class="kpi-domain-title">Commercial</span>
           </div>
-          <div class="kpi-value" id="kpi-crm-request">0</div>
-          <div class="kpi-sub">Discount & Exception Requests</div>
+          <div class="kpi-metric-row">
+            <div class="kpi-val" id="metric-crm-count">0</div>
+            <div class="kpi-sub">Contract Requests</div>
+          </div>
+          <div class="kpi-bar-track"><div class="kpi-bar-fill fill-amber" style="width: 45%;"></div></div>
         </div>
 
         <div class="kpi-card" data-domain="#survey-mapping">
           <div class="kpi-header">
-            <span class="kpi-title">USER FEEDBACK</span>
-            <span class="badge badge-cyan">Auto-Categorized</span>
+            <span class="badge badge-cyan">#survey-mapping</span>
+            <span class="kpi-domain-title">User Feedback</span>
           </div>
-          <div class="kpi-value" id="kpi-survey-mapping">0</div>
-          <div class="kpi-sub">Customer Surveys & Insights</div>
+          <div class="kpi-metric-row">
+            <div class="kpi-val" id="metric-survey-count">0</div>
+            <div class="kpi-sub">Feedback Batches</div>
+          </div>
+          <div class="kpi-bar-track"><div class="kpi-bar-fill fill-cyan" style="width: 92%;"></div></div>
         </div>
       </section>
 
-      <!-- Main Workspace Layout -->
-      <main class="workspace-layout">
-        <!-- Left Column: Filterable Task Feed -->
-        <aside class="feed-pane">
-          <div class="pane-header">
-            <h2>Active Tasks</h2>
-            <span class="feed-count" id="feed-count-badge">0 items</span>
+      <!-- Main Operational Split Pane -->
+      <main class="tasks-layout">
+        <!-- Left Column: Unified Queue List -->
+        <aside class="tasks-sidebar">
+          <div class="sidebar-header">
+            <span class="sidebar-title">Tasks & Review Queue</span>
+            <button class="btn btn-secondary btn-sm" id="btn-refresh-queue" title="Refresh">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            </button>
           </div>
 
-          <div class="domain-filters">
-            <button class="filter-tab active" data-filter="all">All</button>
+          <!-- Domain Filter Tabs -->
+          <div class="filter-tabs" id="domain-filters">
+            <button class="filter-tab active" data-filter="all">All Domains</button>
             <button class="filter-tab" data-filter="#prod-bug">Engineering</button>
             <button class="filter-tab" data-filter="#crm-request">Commercial</button>
             <button class="filter-tab" data-filter="#survey-mapping">Feedback</button>
@@ -216,6 +205,7 @@
                   <span class="badge" id="review-domain-badge">#domain</span>
                   <span class="badge badge-state" id="review-state-badge">State</span>
                   <span class="review-id" id="review-id">task-xxxx</span>
+                  <div id="review-custom-tags" class="flex gap-1 items-center"></div>
                 </div>
                 <h1 class="review-title" id="review-title">Item Title</h1>
                 <p class="review-desc" id="review-desc">Description</p>
@@ -273,6 +263,54 @@
               <div class="step-node" id="step-promoted">
                 <div class="step-circle">5</div>
                 <span class="step-label">Applied</span>
+              </div>
+            </div>
+
+            <!-- Attached Developer Prompt Panel -->
+            <div class="attached-prompt-card" id="attached-prompt-card">
+              <div class="prompt-card-header">
+                <div class="prompt-card-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                  <span>Attached Unit Prompt</span>
+                </div>
+                <button id="btn-edit-prompt" class="btn btn-secondary btn-sm">Edit Prompt</button>
+              </div>
+              <div class="prompt-content-box" id="attached-prompt-text">
+                No custom prompt attached. Click 'Edit Prompt' to attach a directive.
+              </div>
+            </div>
+
+            <!-- Unit Achievement vs. Whole System Goal Diagnostic Breakdown -->
+            <div class="prompt-breakdown-card" id="prompt-breakdown-card">
+              <div class="breakdown-header">
+                <div class="breakdown-title-group">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+                  <span class="breakdown-title">Unit Achievement vs. Whole System Goal</span>
+                </div>
+                <span id="breakdown-status-badge" class="badge badge-emerald">Aligned</span>
+              </div>
+
+              <!-- Goal Hierarchy Grid -->
+              <div class="goal-hierarchy-grid">
+                <div class="goal-box system-goal">
+                  <span class="goal-box-label">Macro System Goal</span>
+                  <div class="goal-box-text" id="breakdown-system-goal">Modernize repository and eliminate behavioral regressions through atomic unit gates</div>
+                </div>
+                <div class="goal-box unit-goal">
+                  <span class="goal-box-label">Atomic Unit Goal</span>
+                  <div class="goal-box-text" id="breakdown-unit-goal">Unit task goal</div>
+                </div>
+              </div>
+
+              <!-- Stage Diagnostics & Why Prompt Failed -->
+              <div class="breakdown-stage-diagnostics" id="breakdown-stage-diagnostics">
+                <!-- Dynamically populated based on test results -->
+              </div>
+
+              <!-- System Attachment Indicator -->
+              <div class="system-attachment-bar">
+                <span>System Graph Integration:</span>
+                <strong id="breakdown-attachment-status" class="text-emerald-400">Attached to Target Pipeline</strong>
               </div>
             </div>
 
@@ -354,7 +392,89 @@
       </div>
     </div>
 
-    <!-- Modals (SDLC & Ingestion) -->
+    <!-- Modals -->
+
+    <!-- 1. Board Configuration Modal -->
+    <div id="modal-board-config" class="modal-overlay hidden">
+      <div class="modal-card" style="width: 580px;">
+        <div class="modal-header">
+          <h3>Configure Board & Stage Flow</h3>
+          <button id="btn-close-board-config" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-xs text-slate-400 mb-3">Reorder stages, customize display labels, map to lifecycle state relations, and set WIP limits.</p>
+          <div class="stage-config-list" id="stage-config-list">
+            <!-- Populated dynamically by desktop.js -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="btn-reset-board-config">Reset Defaults</button>
+          <button class="btn btn-primary" id="btn-save-board-config">Save Configuration</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Tag & Change Graph Mapping Modal -->
+    <div id="modal-tag-mapping" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Tag & Change Graph Mapping</h3>
+          <button id="btn-close-tag-modal" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Tag Name</label>
+            <input type="text" id="modal-tag-name" class="form-input" placeholder="#tag-name">
+          </div>
+          <div class="form-group">
+            <label>Mapped Codebase Symbols & Files in Change Graph</label>
+            <div class="flex gap-2">
+              <input type="text" id="modal-tag-symbol-input" class="form-input" placeholder="e.g. crates/auth/token.rs or verify_token">
+              <button class="btn btn-secondary" id="btn-add-mapped-symbol">Add</button>
+            </div>
+            <div class="mapped-symbols-list" id="modal-mapped-symbols-list"></div>
+          </div>
+          <div class="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center">
+            <span class="text-xs text-slate-400">Jump directly to Change Graph:</span>
+            <button class="btn btn-secondary text-cyan-400" id="btn-jump-to-graph">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <span>View in Change Graph</span>
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-danger mr-auto" id="btn-delete-tag">Delete Tag</button>
+          <button class="btn btn-secondary" id="btn-cancel-tag-modal">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-tag-modal">Save Tag</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Edit Prompt Modal -->
+    <div id="modal-edit-prompt" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Edit Attached Developer Prompt</h3>
+          <button id="btn-close-prompt-modal" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Macro System Goal (Overarching Objective)</label>
+            <input type="text" id="edit-prompt-system-goal" class="form-input" placeholder="e.g. Modernize auth to zero-regression tokens">
+          </div>
+          <div class="form-group">
+            <label>Atomic Unit Prompt (Focused Micro Directive)</label>
+            <textarea id="edit-prompt-unit-text" class="form-textarea" rows="4" placeholder="Specific goal for the agent to achieve in this unit"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="btn-cancel-prompt-modal">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-prompt-modal">Save & Dispatch Unit</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. SDLC Integration Modal -->
     <div id="modal-sdlc" class="modal-overlay hidden">
       <div class="modal-card">
         <div class="modal-header">
@@ -391,6 +511,7 @@
       </div>
     </div>
 
+    <!-- 5. Ingestion Modal -->
     <div id="modal-ingest" class="modal-overlay hidden">
       <div class="modal-card">
         <div class="modal-header">
@@ -411,7 +532,7 @@
             <input type="text" id="new-item-title" class="form-input" placeholder="e.g. Handle token timeout in AuthHandler::verify_token">
           </div>
           <div class="form-group">
-            <label>Details or Prompt</label>
+            <label>Attached Developer Prompt / Goal</label>
             <textarea id="new-item-desc" class="form-textarea" rows="3" placeholder="Context, error message, or developer prompt"></textarea>
           </div>
           <div class="form-group">
