@@ -30,7 +30,13 @@ async fn main() -> anyhow::Result<()> {
             get_kernel_plugins,
             get_maker_plugins,
             save_maker_plugin,
-            delete_maker_plugin
+            delete_maker_plugin,
+            scan_local_repository,
+            setup_project_workflow,
+            get_project_structure,
+            advance_card_stage,
+            get_agent_api_keys,
+            save_agent_api_keys
         ])
         .run(tauri::generate_context!())
         .expect("error while running Exodus Mission Control desktop application");

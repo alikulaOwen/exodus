@@ -1784,6 +1784,8 @@ dependencies = [
  "exodus-core",
  "exodus-graph",
  "exodus-kernel",
+ "exodus-parser",
+ "exodus-planner",
  "exodus-store",
  "exodus-toolchain",
  "exodus-verifier",
