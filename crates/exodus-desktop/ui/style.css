@@ -315,13 +315,14 @@ body {
 .kanban-grid {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(280px, 1fr);
+  grid-auto-columns: minmax(300px, 1fr);
   gap: 12px;
   padding: 14px 16px;
   flex: 1;
   overflow-x: auto;
   overflow-y: hidden;
-  align-items: start;
+  align-items: stretch;
+  height: calc(100vh - 120px);
 }
 
 .kanban-col {
@@ -330,19 +331,21 @@ body {
   background-color: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  max-height: calc(100vh - 120px);
-  min-width: 280px;
+  height: 100%;
+  max-height: 100%;
+  min-width: 300px;
   overflow: hidden;
   transition: border-color 0.15s ease;
 }
 
 .col-header {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .col-title-group {
@@ -386,8 +389,26 @@ body {
   gap: 8px;
   padding: 10px 12px;
   overflow-y: auto;
-  flex: 1;
-  min-height: 120px;
+  overflow-x: hidden;
+  flex: 1 1 0%;
+  min-height: 0;
+}
+
+.col-cards::-webkit-scrollbar {
+  width: 5px;
+}
+
+.col-cards::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.col-cards::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+}
+
+.col-cards::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 /* Individual Kanban Card */
@@ -402,7 +423,8 @@ body {
   cursor: pointer;
   transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease, border-color 0.18s ease;
   user-select: none;
-  overflow: hidden;
+  flex-shrink: 0;
+  min-height: 72px;
 }
 
 .kanban-card:hover {
@@ -601,8 +623,9 @@ body {
 }
 
 .items-list {
-  flex: 1;
+  flex: 1 1 0%;
   overflow-y: auto;
+  min-height: 0;
   padding: 8px;
   display: flex;
   flex-direction: column;
@@ -610,6 +633,7 @@ body {
 }
 
 .queue-item {
+  flex-shrink: 0;
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--bg-card);

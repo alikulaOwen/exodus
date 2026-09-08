@@ -108,6 +108,7 @@ let currentItems = [];
 let selectedItemId = null;
 let currentFilter = 'all';
 let boardFilter = 'all';
+let boardSearchQuery = '';
 let isAutoPipelineRunning = false;
 let recentlyMovedId = null;
 let activeTab = 'board';
@@ -177,13 +178,25 @@ function renderBoard() {
 
   const config = getBoardConfig();
   const visibleStages = config.filter(s => s.visible);
+  const query = (boardSearchQuery || '').toLowerCase().trim();
 
-  const filtered = boardFilter === 'all'
-    ? currentItems
-    : currentItems.filter(i => {
-        const itemTags = i.tags || [i.domain_tag || '#prod-bug'];
-        return itemTags.includes(boardFilter) || i.domain_tag === boardFilter;
-      });
+  const filtered = currentItems.filter(i => {
+    // Tag / Domain filter
+    if (boardFilter !== 'all') {
+      const itemTags = i.tags || [i.domain_tag || '#prod-bug'];
+      const matches = itemTags.includes(boardFilter) || i.domain_tag === boardFilter;
+      if (!matches) return false;
+    }
+    // Search query filter
+    if (query) {
+      const titleMatch = (i.title || '').toLowerCase().includes(query);
+      const descMatch = (i.description || '').toLowerCase().includes(query);
+      const idMatch = (i.id || '').toLowerCase().includes(query);
+      const actorMatch = (i.requester || '').toLowerCase().includes(query);
+      return titleMatch || descMatch || idMatch || actorMatch;
+    }
+    return true;
+  });
 
   const buckets = {};
   visibleStages.forEach(s => { buckets[s.id] = []; });
@@ -1011,6 +1024,13 @@ async function boot() {
       boardFilter = chip.getAttribute('data-filter') || 'all';
       renderBoard();
     });
+  });
+
+  // Real-time board search query filter
+  const searchInput = document.getElementById('board-search-input');
+  searchInput?.addEventListener('input', (e) => {
+    boardSearchQuery = e.target.value;
+    renderBoard();
   });
 
   await loadOperations();
