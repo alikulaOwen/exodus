@@ -5,6 +5,12 @@ const invoke = async (cmd, args = {}) => {
   if (window.__TAURI__?.core?.invoke) {
     return await window.__TAURI__.core.invoke(cmd, args);
   }
+  if (window.__TAURI__?.invoke) {
+    return await window.__TAURI__.invoke(cmd, args);
+  }
+  if (window.__TAURI_INTERNALS__?.invoke) {
+    return await window.__TAURI_INTERNALS__.invoke(cmd, args);
+  }
   
   try {
     switch (cmd) {
@@ -96,7 +102,7 @@ const invoke = async (cmd, args = {}) => {
   } catch (err) {
     console.error(`[Invoke Error] ${cmd}:`, err);
     throw err;
-  }
+  }desktop.js#L1-35
 };
 
 let currentItems = [];
@@ -429,6 +435,10 @@ function initProjectSetupWizard() {
   const btnClose = document.getElementById('btn-close-project-setup');
   const btnCancel = document.getElementById('btn-cancel-project-setup');
   const btnScan = document.getElementById('btn-run-scan');
+  const btnBrowse = document.getElementById('btn-browse-folder');
+  const htmlFolderPicker = document.getElementById('html-folder-picker');
+  const pathInput = document.getElementById('setup-repo-path');
+  const scanError = document.getElementById('setup-scan-error');
   const btnStart = document.getElementById('btn-start-project-setup');
   const discoveryCard = document.getElementById('setup-discovery-card');
   const pipeline = document.getElementById('setup-progress-pipeline');
@@ -439,6 +449,10 @@ function initProjectSetupWizard() {
     modal.classList.remove('hidden');
     discoveryCard?.classList.add('hidden');
     pipeline?.classList.add('hidden');
+    if (scanError) {
+      scanError.classList.add('hidden');
+      scanError.textContent = '';
+    }
     btnStart.disabled = true;
   });
 
@@ -446,12 +460,53 @@ function initProjectSetupWizard() {
   btnClose?.addEventListener('click', closeModal);
   btnCancel?.addEventListener('click', closeModal);
 
+  btnBrowse?.addEventListener('click', async () => {
+    try {
+      btnBrowse.disabled = true;
+      const currentVal = pathInput?.value?.trim() || '';
+      const selected = await invoke('pick_folder', { defaultPath: currentVal || null });
+      if (selected) {
+        if (pathInput) pathInput.value = selected;
+        if (scanError) {
+          scanError.classList.add('hidden');
+          scanError.textContent = '';
+        }
+        btnScan?.click();
+      }
+    } catch (err) {
+      console.warn('Native folder picker not available, attempting fallback:', err);
+      htmlFolderPicker?.click();
+    } finally {
+      btnBrowse.disabled = false;
+    }
+  });
+
+  htmlFolderPicker?.addEventListener('change', (e) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const firstFile = files[0];
+      const relPath = firstFile.webkitRelativePath || '';
+      const folderName = relPath.split('/')[0];
+      if (folderName && pathInput) {
+        pathInput.value = folderName;
+        btnScan?.click();
+      }
+    }
+  });
+
   btnScan?.addEventListener('click', async () => {
-    const path = document.getElementById('setup-repo-path')?.value.trim();
-    if (!path) return;
+    const path = pathInput?.value?.trim();
+    if (!path) {
+      showToast('Please enter or select a repository directory.', 'error');
+      return;
+    }
 
     btnScan.disabled = true;
     btnScan.textContent = 'Scanning...';
+    if (scanError) {
+      scanError.classList.add('hidden');
+      scanError.textContent = '';
+    }
 
     try {
       const result = await invoke('scan_local_repository', { path });
@@ -462,12 +517,21 @@ function initProjectSetupWizard() {
         document.getElementById('discover-files').textContent = result.total_files;
         document.getElementById('discover-lines').textContent = result.total_lines_approx.toLocaleString();
         
+        if (result.path && pathInput) {
+          pathInput.value = result.path;
+        }
+
         discoveryCard?.classList.remove('hidden');
         btnStart.disabled = false;
         showToast(`Repository scanned: detected ${result.detected_language}`);
       }
     } catch (err) {
-      showToast(`Scan failed: ${err}`, 'error');
+      const msg = typeof err === 'string' ? err : (err?.message || JSON.stringify(err));
+      if (scanError) {
+        scanError.textContent = `Scan failed: ${msg}. Try using the Browse button to select an existing directory.`;
+        scanError.classList.remove('hidden');
+      }
+      showToast(`Scan failed: ${msg}`, 'error');
     } finally {
       btnScan.disabled = false;
       btnScan.textContent = 'Scan Repo';

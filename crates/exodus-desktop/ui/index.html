@@ -415,14 +415,28 @@
           <div class="form-group">
             <label class="text-xs font-semibold text-zinc-300">Local Repository Path</label>
             <div class="flex gap-2">
-              <input type="text" id="setup-repo-path" class="form-input flex-1" placeholder="/absolute/path/to/repo or demo_projects/..." value="demo_projects/monoglot_python_service">
-              <button class="btn btn-primary px-4" id="btn-run-scan">Scan Repo</button>
+              <input type="text" id="setup-repo-path" class="form-input flex-1" placeholder="/absolute/path/to/repo or select folder..." value="demo_projects/monoglot_python_service">
+              <button type="button" class="btn btn-secondary px-3 flex items-center gap-1.5" id="btn-browse-folder" title="Browse local directories">
+                <svg class="w-4 h-4 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                </svg>
+                <span>Browse...</span>
+              </button>
+              <button type="button" class="btn btn-primary px-4 flex items-center gap-1.5" id="btn-run-scan">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+                <span>Scan Repo</span>
+              </button>
             </div>
+            <input type="file" id="html-folder-picker" webkitdirectory directory class="hidden">
             <div class="flex gap-2 mt-1.5">
               <span class="text-xs text-zinc-500">Quick Presets:</span>
               <button class="text-xs text-platinum underline hover:text-white" onclick="document.getElementById('setup-repo-path').value='demo_projects/monoglot_python_service'; document.getElementById('btn-run-scan').click();">Demo Python Service</button>
               <button class="text-xs text-platinum underline hover:text-white" onclick="document.getElementById('setup-repo-path').value='demo_projects/turborepo_microservices'; document.getElementById('btn-run-scan').click();">Turborepo Microservices</button>
             </div>
+            <!-- Dynamic scan error banner -->
+            <div id="setup-scan-error" class="hidden mt-2 p-2.5 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 text-xs"></div>
           </div>
 
           <!-- Discovered Config Card (Populated dynamically) -->

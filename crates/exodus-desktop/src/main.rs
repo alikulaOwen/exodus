@@ -32,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
             save_maker_plugin,
             delete_maker_plugin,
             scan_local_repository,
+            pick_folder,
             setup_project_workflow,
             get_project_structure,
             advance_card_stage,

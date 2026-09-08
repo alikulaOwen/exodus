@@ -420,21 +420,129 @@ pub async fn advance_card_stage(
 // Project Discovery, Configuration & Setup Commands
 // ---------------------------------------------------------------------------
 
+pub fn resolve_project_path(raw_path: &str) -> Result<PathBuf, String> {
+    let trimmed = raw_path.trim().trim_matches('"').trim_matches('\'');
+    if trimmed.is_empty() {
+        return Err("Project path cannot be empty.".to_string());
+    }
+
+    // Expand ~ and ~/
+    let expanded = if trimmed == "~" {
+        std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(trimmed))
+    } else if let Some(rest) = trimmed.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            PathBuf::from(home).join(rest)
+        } else {
+            PathBuf::from(trimmed)
+        }
+    } else {
+        PathBuf::from(trimmed)
+    };
+
+    // If it exists directly as is
+    if expanded.exists() {
+        if !expanded.is_dir() {
+            return Err(format!(
+                "Path '{}' is a file, not a directory.",
+                expanded.display()
+            ));
+        }
+        return Ok(std::fs::canonicalize(&expanded).unwrap_or(expanded));
+    }
+
+    // If relative, check against current_dir or parent directories
+    if expanded.is_relative() {
+        if let Ok(cwd) = std::env::current_dir() {
+            let candidate = cwd.join(&expanded);
+            if candidate.exists() && candidate.is_dir() {
+                return Ok(std::fs::canonicalize(&candidate).unwrap_or(candidate));
+            }
+            // Check up to 5 parent directories
+            let mut curr = cwd.as_path();
+            for _ in 0..5 {
+                let candidate = curr.join(&expanded);
+                if candidate.exists() && candidate.is_dir() {
+                    return Ok(std::fs::canonicalize(&candidate).unwrap_or(candidate));
+                }
+                if let Some(p) = curr.parent() {
+                    curr = p;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    Err(format!(
+        "Directory '{}' does not exist on local machine.",
+        raw_path
+    ))
+}
+
+#[tauri::command]
+pub async fn pick_folder(default_path: Option<String>) -> Result<Option<String>, String> {
+    let mut dialog = rfd::AsyncFileDialog::new().set_title("Select Project Repository");
+    if let Some(ref p) = default_path {
+        if let Ok(resolved) = resolve_project_path(p) {
+            dialog = dialog.set_directory(&resolved);
+        }
+    }
+
+    if let Some(folder) = dialog.pick_folder().await {
+        return Ok(Some(folder.path().display().to_string()));
+    }
+
+    Ok(None)
+}
+
+pub async fn collect_source_files(root: &Path, max_depth: usize) -> Vec<PathBuf> {
+    let mut results = Vec::new();
+    let mut stack = vec![(root.to_path_buf(), 0usize)];
+    let mut visited = 0;
+
+    while let Some((dir, depth)) = stack.pop() {
+        if let Ok(mut entries) = tokio::fs::read_dir(&dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let p = entry.path();
+                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if name.starts_with('.')
+                    || name == "target"
+                    || name == "node_modules"
+                    || name == "venv"
+                    || name == ".venv"
+                    || name == "__pycache__"
+                    || name == "dist"
+                    || name == "build"
+                {
+                    continue;
+                }
+
+                if p.is_dir() {
+                    if depth < max_depth && visited < 500 {
+                        visited += 1;
+                        stack.push((p, depth + 1));
+                    }
+                } else if p.is_file() {
+                    if let Some("py" | "ts" | "js" | "tsx" | "jsx" | "go" | "rs") =
+                        p.extension().and_then(|e| e.to_str())
+                    {
+                        results.push(p);
+                    }
+                }
+            }
+        }
+    }
+    results
+}
+
 #[tauri::command]
 pub async fn scan_local_repository(
     path: String,
     _state: State<'_, DesktopState>,
 ) -> Result<ProjectScanResult, String> {
-    let target_path = PathBuf::from(&path);
-    if !target_path.exists() {
-        return Err(format!(
-            "Directory '{}' does not exist on local machine.",
-            path
-        ));
-    }
-    if !target_path.is_dir() {
-        return Err(format!("Path '{}' is a file, not a directory.", path));
-    }
+    let target_path = resolve_project_path(&path)?;
 
     let name = target_path
         .file_name()
@@ -444,7 +552,6 @@ pub async fn scan_local_repository(
 
     let mut manifest_files = Vec::new();
     let mut source_files = Vec::new();
-    let mut total_files = 0;
     let mut total_lines_approx = 0;
     let mut py_count = 0;
     let mut ts_count = 0;
@@ -473,57 +580,38 @@ pub async fn scan_local_repository(
     let has_git = target_path.join(".git").exists();
     let has_existing_plan = target_path.join(".exodus").join("plan.json").exists();
 
-    // Read entries shallowly/recursively up to depth 3
-    let mut stack = vec![target_path.clone()];
-    while let Some(dir) = stack.pop() {
-        if let Ok(mut entries) = tokio::fs::read_dir(&dir).await {
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let p = entry.path();
-                let file_name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if file_name.starts_with('.')
-                    || file_name == "target"
-                    || file_name == "node_modules"
-                    || file_name == "venv"
-                {
-                    continue;
+    let collected = collect_source_files(&target_path, 5).await;
+    let total_files = collected.len();
+
+    for p in collected {
+        if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+            let rel = p
+                .strip_prefix(&target_path)
+                .unwrap_or(&p)
+                .display()
+                .to_string();
+            match ext {
+                "py" => {
+                    py_count += 1;
+                    source_files.push(rel);
                 }
-                if p.is_dir() {
-                    if stack.len() < 20 {
-                        stack.push(p);
-                    }
-                } else if p.is_file() {
-                    total_files += 1;
-                    if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-                        let rel = p
-                            .strip_prefix(&target_path)
-                            .unwrap_or(&p)
-                            .display()
-                            .to_string();
-                        match ext {
-                            "py" => {
-                                py_count += 1;
-                                source_files.push(rel);
-                            }
-                            "ts" | "js" | "tsx" | "jsx" => {
-                                ts_count += 1;
-                                source_files.push(rel);
-                            }
-                            "go" => {
-                                go_count += 1;
-                                source_files.push(rel);
-                            }
-                            "rs" => {
-                                rs_count += 1;
-                                source_files.push(rel);
-                            }
-                            _ => {}
-                        }
-                    }
-                    if let Ok(meta) = entry.metadata().await {
-                        total_lines_approx += (meta.len() / 45) as usize;
-                    }
+                "ts" | "js" | "tsx" | "jsx" => {
+                    ts_count += 1;
+                    source_files.push(rel);
                 }
+                "go" => {
+                    go_count += 1;
+                    source_files.push(rel);
+                }
+                "rs" => {
+                    rs_count += 1;
+                    source_files.push(rel);
+                }
+                _ => {}
             }
+        }
+        if let Ok(meta) = p.metadata() {
+            total_lines_approx += (meta.len() / 45) as usize;
         }
     }
 
@@ -567,10 +655,7 @@ pub async fn setup_project_workflow(
     target_lang: String,
     state: State<'_, DesktopState>,
 ) -> Result<ProjectSetupResult, String> {
-    let target_path = PathBuf::from(&path);
-    if !target_path.exists() {
-        return Err(format!("Directory '{}' not found.", path));
-    }
+    let target_path = resolve_project_path(&path)?;
 
     // Set active project path
     {
@@ -588,16 +673,12 @@ pub async fn setup_project_workflow(
     let mut discovered_units = Vec::new();
     let adapter = PythonSourceAdapter::new();
 
-    // Scan source files for AST parsing
-    let mut py_files = Vec::new();
-    if let Ok(mut entries) = tokio::fs::read_dir(&target_path).await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let p = entry.path();
-            if p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("py") {
-                py_files.push(p);
-            }
-        }
-    }
+    // Scan source files for AST parsing (nested up to 4 levels)
+    let all_files = collect_source_files(&target_path, 4).await;
+    let py_files: Vec<PathBuf> = all_files
+        .into_iter()
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("py"))
+        .collect();
 
     let mut store = state.store.lock().await;
 
@@ -892,39 +973,30 @@ pub async fn get_esg_topology(
 ) -> Result<EsgTopologyPayload, String> {
     let active_path = {
         let guard = state.active_project.lock().await;
-        guard
+        let p = guard
             .clone()
-            .unwrap_or_else(|| PathBuf::from("demo_projects/monoglot_python_service"))
+            .unwrap_or_else(|| PathBuf::from("demo_projects/monoglot_python_service"));
+        resolve_project_path(&p.display().to_string()).unwrap_or(p)
     };
 
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
-    // Check if real source files exist in active_path
-    let mut py_files = Vec::new();
-    if active_path.exists() {
-        if let Ok(mut entries) = tokio::fs::read_dir(&active_path).await {
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let p = entry.path();
-                if p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("py") {
-                    py_files.push(p);
-                }
-            }
-        }
-    }
+    // Check if real source files exist in active_path (nested up to 4 levels)
+    let mut py_files = collect_source_files(&active_path, 4)
+        .await
+        .into_iter()
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("py"))
+        .collect::<Vec<_>>();
 
     if py_files.is_empty() {
         // Fallback to demo service if active path has no py files
-        let demo_dir = PathBuf::from("demo_projects/monoglot_python_service");
-        if demo_dir.exists() {
-            if let Ok(mut entries) = tokio::fs::read_dir(&demo_dir).await {
-                while let Ok(Some(entry)) = entries.next_entry().await {
-                    let p = entry.path();
-                    if p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("py") {
-                        py_files.push(p);
-                    }
-                }
-            }
+        if let Ok(demo_dir) = resolve_project_path("demo_projects/monoglot_python_service") {
+            py_files = collect_source_files(&demo_dir, 4)
+                .await
+                .into_iter()
+                .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("py"))
+                .collect();
         }
     }
 
@@ -1358,4 +1430,32 @@ pub async fn delete_maker_plugin(id: String) -> Result<Vec<CustomMakerPlugin>, S
         .await
         .map_err(|e| e.to_string())?;
     Ok(plugins)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_resolve_project_path() {
+        let res = resolve_project_path("demo_projects/monoglot_python_service");
+        assert!(res.is_ok(), "Failed to resolve demo project: {:?}", res);
+        let path = res.unwrap();
+        assert!(path.exists());
+        assert!(path.is_dir());
+
+        let res_curr = resolve_project_path(".");
+        assert!(res_curr.is_ok());
+
+        let res_nonexistent = resolve_project_path("/definitely/nonexistent/directory/path/12345");
+        assert!(res_nonexistent.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_collect_source_files() {
+        let res = resolve_project_path("demo_projects/monoglot_python_service").unwrap();
+        let files = collect_source_files(&res, 4).await;
+        assert!(!files.is_empty());
+        assert!(files.iter().any(|f| f.extension().and_then(|e| e.to_str()) == Some("py")));
+    }
 }
