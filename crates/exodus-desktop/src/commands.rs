@@ -1456,6 +1456,8 @@ mod tests {
         let res = resolve_project_path("demo_projects/monoglot_python_service").unwrap();
         let files = collect_source_files(&res, 4).await;
         assert!(!files.is_empty());
-        assert!(files.iter().any(|f| f.extension().and_then(|e| e.to_str()) == Some("py")));
+        assert!(files
+            .iter()
+            .any(|f| f.extension().and_then(|e| e.to_str()) == Some("py")));
     }
 }

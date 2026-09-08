@@ -101,8 +101,7 @@ const invoke = async (cmd, args = {}) => {
     }
   } catch (err) {
     console.error(`[Invoke Error] ${cmd}:`, err);
-    throw err;
-  }desktop.js#L1-35
+  }
 };
 
 let currentItems = [];
@@ -443,22 +442,50 @@ function initProjectSetupWizard() {
   const discoveryCard = document.getElementById('setup-discovery-card');
   const pipeline = document.getElementById('setup-progress-pipeline');
 
-  if (!modal) return;
+  const resetPipelineSteps = () => {
+    const steps = ['pipe-step-1', 'pipe-step-2', 'pipe-step-3', 'pipe-step-4', 'pipe-step-5'];
+    steps.forEach((s, idx) => {
+      const el = document.getElementById(s);
+      if (el) {
+        el.classList.remove('border-emerald-500/50', 'bg-emerald-500/5');
+        const sp = el.querySelector('span');
+        if (sp) {
+          sp.textContent = `${idx + 1}`;
+          sp.classList.remove('border-emerald-400', 'text-emerald-400');
+        }
+      }
+    });
+  };
 
   btnOpen?.addEventListener('click', () => {
     modal.classList.remove('hidden');
     discoveryCard?.classList.add('hidden');
     pipeline?.classList.add('hidden');
+    resetPipelineSteps();
     if (scanError) {
       scanError.classList.add('hidden');
       scanError.textContent = '';
     }
-    btnStart.disabled = true;
+    btnStart.disabled = !(pathInput && pathInput.value.trim().length > 0);
+  });
+
+  pathInput?.addEventListener('input', () => {
+    btnStart.disabled = !(pathInput.value.trim().length > 0);
   });
 
   const closeModal = () => modal.classList.add('hidden');
   btnClose?.addEventListener('click', closeModal);
   btnCancel?.addEventListener('click', closeModal);
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  pathInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      btnScan?.click();
+    }
+  });
 
   btnBrowse?.addEventListener('click', async () => {
     try {
@@ -765,6 +792,9 @@ function initSettingsModal() {
   const closeModal = () => modal.classList.add('hidden');
   btnClose?.addEventListener('click', closeModal);
   btnCancel?.addEventListener('click', closeModal);
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
 
   btnSave?.addEventListener('click', async () => {
     const keys = {
@@ -891,6 +921,9 @@ function initNewTaskModal() {
   const closeModal = () => modal?.classList.add('hidden');
   btnClose?.addEventListener('click', closeModal);
   btnCancel?.addEventListener('click', closeModal);
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
 
   btnSubmit?.addEventListener('click', async () => {
     const title = document.getElementById('new-item-title')?.value.trim();
@@ -963,7 +996,7 @@ function initAutoPipeline() {
 }
 
 // Application Initialization
-window.addEventListener('DOMContentLoaded', async () => {
+async function boot() {
   initNavigation();
   initProjectSetupWizard();
   initSettingsModal();
@@ -972,7 +1005,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Filter chips
   document.querySelectorAll('.filter-chip').forEach(chip => {
-    chip.addEventListener('click', (e) => {
+    chip.addEventListener('click', () => {
       document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
       boardFilter = chip.getAttribute('data-filter') || 'all';
@@ -981,4 +1014,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   });
 
   await loadOperations();
-});
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
